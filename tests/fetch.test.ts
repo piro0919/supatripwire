@@ -6,7 +6,12 @@ import {
   trace,
 } from "@opentelemetry/api";
 import { AsyncLocalStorageContextManager } from "@opentelemetry/context-async-hooks";
-import { W3CTraceContextPropagator } from "@opentelemetry/core";
+import {
+  CompositePropagator,
+  TraceState,
+  W3CBaggagePropagator,
+  W3CTraceContextPropagator,
+} from "@opentelemetry/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { tripwireFetch } from "../src/fetch.js";
 
@@ -45,6 +50,16 @@ describe("tripwireFetch without OpenTelemetry", () => {
     expect(calls.map((h) => [...h])).toEqual([[], []]);
   });
 
+  it("leaves out an IP that is not a valid header value instead of failing", async () => {
+    const { fetch, calls } = recorder();
+    const response = await tripwireFetch({
+      clientIp: "203.0.113.7\n198.51.100.1",
+      fetch,
+    })("https://x", {});
+    expect(response.status).toBe(204);
+    expect(calls[0]?.has("x-forwarded-for")).toBe(false);
+  });
+
   it("does not overwrite headers the caller already set", async () => {
     const { fetch, calls } = recorder();
     await tripwireFetch({ clientIp: "203.0.113.7", fetch })("https://x", {
@@ -69,7 +84,15 @@ describe("tripwireFetch with OpenTelemetry", () => {
     context.setGlobalContextManager(
       new AsyncLocalStorageContextManager().enable(),
     );
-    propagation.setGlobalPropagator(new W3CTraceContextPropagator());
+    // W3C trace context plus baggage, as many setups register.
+    propagation.setGlobalPropagator(
+      new CompositePropagator({
+        propagators: [
+          new W3CTraceContextPropagator(),
+          new W3CBaggagePropagator(),
+        ],
+      }),
+    );
   });
 
   afterAll(() => {
@@ -77,10 +100,29 @@ describe("tripwireFetch with OpenTelemetry", () => {
     propagation.disable();
   });
 
-  const active = trace.setSpanContext(ROOT_CONTEXT, {
-    traceId: TRACE_ID,
-    spanId: SPAN_ID,
-    traceFlags: TraceFlags.SAMPLED,
+  const active = propagation.setBaggage(
+    trace.setSpanContext(ROOT_CONTEXT, {
+      traceId: TRACE_ID,
+      spanId: SPAN_ID,
+      traceFlags: TraceFlags.SAMPLED,
+      traceState: new TraceState("vendor=abc"),
+    }),
+    propagation.createBaggage({ userEmail: { value: "a@example.com" } }),
+  );
+
+  it("sends the trace context but never the app's baggage", async () => {
+    const { fetch, calls } = recorder();
+    const wrapped = tripwireFetch({ fetch });
+    await context.with(active, () => wrapped("https://x", {}));
+    await context.with(active, () =>
+      wrapped("https://x", {
+        headers: { baggage: "tenant=a", tracestate: "own=1" },
+      }),
+    );
+    expect(calls[0]?.get("tracestate")).toBe("vendor=abc");
+    expect(calls[0]?.has("baggage")).toBe(false);
+    expect(calls[1]?.get("baggage")).toBe("tenant=a");
+    expect(calls[1]?.get("tracestate")).toBe("own=1");
   });
 
   it("sends the active span's trace id as traceparent", async () => {

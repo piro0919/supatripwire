@@ -90,7 +90,10 @@ Decided 2026-11-25:
 - With `@vercel/otel`'s `propagateContextUrls` also covering Supabase, the request still
   carries one `traceparent`, with the page request's trace id (tested).
 - The caller passes the IP (from `next/headers`); the package does not depend on Next.js.
-- Headers the caller already set are kept.
+- Headers the caller already set are kept. Only `traceparent` and `tracestate` are taken
+  from the propagator — a composite one also writes `baggage`, which would leak the
+  app's baggage to Supabase. An IP that is not a valid header value is left out rather
+  than failing the request.
 - Supabase Auth has its own `Sb-Forwarded-For` header for rate limiting by end-user IP
   (needs the secret key and a project setting). Not used: the goal here is the log, not
   rate limits. Whether a plain `x-forwarded-for` changes Auth's rate limiting is

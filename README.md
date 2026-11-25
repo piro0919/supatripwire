@@ -158,8 +158,14 @@ export async function createClient() {
 ```
 
 On Vercel, `x-forwarded-for` on the incoming request is the client's IP. If you run your
-own proxy in front, pass the header that proxy sets instead. Headers you already set
-are kept. The entry point does not load the CLI or `pg`.
+own proxy in front, pass the header that proxy sets instead: elsewhere
+`x-forwarded-for` is a chain the client can write to. Headers you already set are kept,
+and no other propagated field, such as `baggage`, is sent. The entry point does not
+load the CLI or `pg`.
+
+`@opentelemetry/api` is a peer dependency, so the helper uses your app's copy — a
+different copy would not see the tracing your app registered. npm and pnpm install it
+for you; with Yarn, add it yourself.
 
 The report gives each finding's log id; look it up in the project's logs in the
 Supabase dashboard to see these two fields.
