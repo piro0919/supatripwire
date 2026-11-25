@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1 - 2026-11-26
+
+- README: drop the "not yet published" note. The first release published through npm
+  trusted publishing, with provenance.
+
 ## 0.1.0 - 2026-11-26
 
 - Config: `"rowCeiling": false` on a table turns check 2 off for it, for tables whose
