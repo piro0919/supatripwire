@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { ImageResponse } from "next/og";
 import { getTranslations } from "next-intl/server";
 import { routing } from "@/i18n/routing";
+import { CHECK_COMMAND, CHECK_REPORT } from "./terminal-output";
 
 export const alt = "supatripwire";
 export const size = { width: 1200, height: 630 };
@@ -14,11 +15,32 @@ export function generateStaticParams(): { locale: string }[] {
   return routing.locales.map((locale) => ({ locale }));
 }
 
-/* Shown at about 176px in the kk-web list and 500px in an X card, where only the name and
-   one line survive. Same colors as the page: white, slate text, the muted slate of its body text. */
-const BG = "#ffffff";
-const INK = "#334155";
-const MUTED = "#64748b";
+/* The card shows real output, the same report the page's terminals print: the command,
+   how many reads were scanned, and how many crossed tenants. */
+const SCANNED = CHECK_REPORT[1] ?? "";
+const CROSSED = CHECK_REPORT.find((line) => line.startsWith("Data crossed tenants")) ?? "";
+
+/* Pieces the line may wrap between. The renderer would otherwise break Japanese anywhere,
+   leaving 「を検知」 alone on a line. Hiragana and spaces join the piece before them, which
+   keeps particles and okurigana with their word. */
+function wrapPieces(text: string, locale: string): string[] {
+  const pieces: string[] = [];
+  for (const { segment } of new Intl.Segmenter(locale, { granularity: "word" }).segment(text)) {
+    const last = pieces.length - 1;
+    if (last >= 0 && /^[\p{Script=Hiragana}\s]+$/u.test(segment)) {
+      pieces[last] += segment;
+    } else {
+      pieces.push(segment);
+    }
+  }
+  return pieces;
+}
+
+/* The page's terminal colors. */
+const TERMINAL = "#282c34";
+const TERMINAL_INK = "#ffffff";
+const TERMINAL_MUTED = "#a4a8b0";
+const CROSSED_TONE = "#f87171";
 
 export default async function OgImage({
   params,
@@ -27,28 +49,78 @@ export default async function OgImage({
 }): Promise<ImageResponse> {
   const { locale } = await params;
   const t = await getTranslations({ locale, namespace: "hero" });
-  /* Faces cut down to the characters drawn here: the name and hero.title. If either changes, cut them again as
-     assets/README.md describes. */
+  /* Faces cut down to the characters drawn here: the name, hero.title, the domain and the
+     terminal lines. If any of them changes, cut them again as assets/README.md describes. */
   const [inter, noto] = await Promise.all([
     readFile(join(process.cwd(), "assets/Inter-Bold-subset.woff")),
     readFile(join(process.cwd(), "assets/NotoSansJP-Bold-subset.woff")),
   ]);
 
+  /* Same layout as the other package cards on kkweb.io: name, one line and the domain on
+     the left, what the package does on the right. */
   return new ImageResponse(
     <div
       style={{
         alignItems: "center",
-        background: BG,
+        background: "#0b0b0f",
+        color: "#ffffff",
         display: "flex",
-        flexDirection: "column",
         height: "100%",
-        justifyContent: "center",
+        padding: "0 80px",
         width: "100%",
       }}
     >
-      <div style={{ color: INK, fontSize: 120, fontWeight: 700 }}>supatripwire</div>
-      <div style={{ color: MUTED, display: "flex", fontSize: 44, fontWeight: 700, marginTop: 16 }}>
-        {t("title")}
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "center",
+          width: 560,
+        }}
+      >
+        <div style={{ display: "flex", fontSize: 54, letterSpacing: -1 }}>supatripwire</div>
+        <div
+          style={{
+            color: "#a1a1aa",
+            display: "flex",
+            flexWrap: "wrap",
+            fontSize: 30,
+            lineHeight: 1.4,
+            marginTop: 28,
+          }}
+        >
+          {wrapPieces(t("title"), locale).map((piece, index) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: fixed text; pieces can repeat
+            <span key={index} style={{ whiteSpace: "pre" }}>
+              {piece}
+            </span>
+          ))}
+        </div>
+        <div style={{ color: "#71717a", display: "flex", fontSize: 26, marginTop: 48 }}>
+          kkweb.io
+        </div>
+      </div>
+
+      <div style={{ display: "flex", flex: 1, justifyContent: "flex-end" }}>
+        <div
+          style={{
+            background: TERMINAL,
+            borderRadius: 16,
+            color: TERMINAL_INK,
+            display: "flex",
+            flexDirection: "column",
+            fontSize: 19,
+            gap: 12,
+            padding: "26px 28px",
+          }}
+        >
+          <div style={{ display: "flex", whiteSpace: "pre" }}>
+            <span style={{ color: TERMINAL_MUTED }}>$ </span>
+            {CHECK_COMMAND}
+          </div>
+          <div style={{ display: "flex" }}>{SCANNED}</div>
+          <div style={{ color: CROSSED_TONE, display: "flex" }}>{CROSSED}</div>
+        </div>
       </div>
     </div>,
     {

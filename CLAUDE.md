@@ -309,6 +309,10 @@ pnpm check:package
   `runDoctor` run on made-up input (random uuids, a throwaway local Postgres, a stubbed
   logs API). See `lp/src/app/[locale]/terminal-output.ts`. Print them again if the
   report's wording changes.
+- The Open Graph card follows the other piro0919 package cards (dark, name, one line
+  and kkweb.io on the left, what the package does on the right), not the page's own
+  look. Its right side is three lines of that same terminal output, so re-cut the Inter
+  subset (`lp/assets/README.md`) when they change.
 - Tailwind font-size and color tokens must not share a name: `text-footer` once
   resolved to the footer's background color and hid the footer links.
 
