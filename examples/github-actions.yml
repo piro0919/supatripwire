@@ -1,0 +1,59 @@
+# Runs supatripwire every hour and fails the job when data crossed tenants,
+# when a finding was held back, or (with --strict) when the run could not look
+# properly. GitHub sends notifications for scheduled runs to the user who last
+# changed the cron line, following their notification settings for Actions.
+#
+# Copy to .github/workflows/supatripwire.yml in a PRIVATE repository, next to
+# supatripwire.json. The report names user ids, tenant ids and tables, and the
+# logs of a public repository's runs are public.
+#
+# Repository secrets (Settings → Secrets and variables → Actions):
+#   SUPABASE_ACCESS_TOKEN      personal access token, to read the logs
+#   SUPATRIPWIRE_DATABASE_URL  the read-only role through the shared pooler in
+#                              session mode — GitHub's runners have no IPv6,
+#                              and the direct connection is IPv6 unless the
+#                              project has the IPv4 add-on:
+#     postgresql://supatripwire.<project-ref>:…@<pooler-host>:5432/postgres
+#     (copy the pooler host from the project's Connect dialog)
+
+name: supatripwire
+
+on:
+  schedule:
+    # UTC. Not at minute 0: GitHub delays, and under load drops, runs at the
+    # start of the hour.
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A slow run is never overlapped by the next one.
+concurrency:
+  group: supatripwire
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Check the last 3 hours
+        # Each hourly run looks back 3 hours, so up to two delayed or dropped
+        # runs, and logs that arrive late, are still covered. The cost: a
+        # finding is reported by up to three runs in a row.
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPATRIPWIRE_DATABASE_URL: ${{ secrets.SUPATRIPWIRE_DATABASE_URL }}
+        run: |
+          set +e
+          # Pin the version you have tested instead of latest.
+          npx --yes supatripwire@latest check --since 3h --strict > report.txt
+          status=$?
+          cat report.txt
+          { echo '```text'; cat report.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit $status

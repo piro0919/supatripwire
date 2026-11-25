@@ -225,6 +225,7 @@ src/
 ├── check-row-ceiling.ts   # check 2
 └── report.ts              # text and JSON output
 tests/                     # vitest; directory.test.ts needs SUPATRIPWIRE_TEST_DATABASE_URL
+examples/github-actions.yml  # scheduled `check --strict` for users to copy
 ```
 
 - TypeScript, ESM only, Node >= 20. Runtime dependency: `pg`; peer:
@@ -261,5 +262,9 @@ pnpm check:package
 
 ## Open questions
 
-- How the CLI is run on a schedule — left to the user (cron, GitHub Actions), or built in.
+- How the CLI is run on a schedule — for now a GitHub Actions template
+  (`examples/github-actions.yml`, added 2026-11-26): hourly at :17 UTC over the last 3
+  hours with `--strict`, through the shared pooler in session mode, as GitHub's runners
+  have no IPv6 and the direct connection is IPv6 without the add-on. Not yet run
+  against a hosted project. Whether to build scheduling in is still open.
 - Whether this stays OSS only or later gets a hosted version.

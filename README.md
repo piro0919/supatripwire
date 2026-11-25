@@ -205,6 +205,33 @@ How far back you can look depends on your plan's
 [log retention](https://supabase.com/docs/guides/telemetry/logs): 1 day on Free, 7 on
 Pro, 28 on Team, 90 on Enterprise.
 
+### On a schedule with GitHub Actions
+
+[`examples/github-actions.yml`](examples/github-actions.yml) runs `check --strict`
+every hour over the last 3 hours, and fails the job on crossed data, a held-back
+finding or a coverage gap. Copy it to `.github/workflows/` and add the two variables
+above as repository secrets.
+
+- **Use a private repository.** The report names user ids, tenant ids and tables, and
+  the run logs of a public repository are public. GitHub also turns off scheduled
+  workflows in a public repository after 60 days without activity.
+- **Connect through the shared pooler in session mode.** GitHub's runners reach IPv4
+  only, and the direct connection (`db.<ref>.supabase.co`) is IPv6 unless the project
+  has the IPv4 add-on
+  ([Supabase docs](https://supabase.com/docs/guides/troubleshooting/supabase--your-network-ipv4-and-ipv6-compatibility-cHe3BP)).
+  Through the pooler the user name carries the project ref:
+  `postgresql://supatripwire.<project-ref>:…@<pooler-host>:5432/postgres`.
+  Copy the pooler host from the project's Connect dialog.
+- **Why 3 hours every hour.** GitHub can delay scheduled runs, or drop them under load
+  ([GitHub docs](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)).
+  The overlap keeps two missed runs, and logs that arrive late, inside some run's
+  range. The cost is that one finding fails up to three runs in a row.
+- GitHub notifies the user who last changed the `cron` line.
+
+The template has not yet been run against a hosted project. Run `doctor` locally with
+the same connection string first; the workflow can then be started by hand from the
+Actions tab before the first scheduled run.
+
 ## Tracing a finding back to a request
 
 In a Next.js app using `@supabase/ssr`, almost every request to Supabase comes from your

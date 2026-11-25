@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `examples/github-actions.yml`: a workflow that runs `check --strict` every hour over
+  the last 3 hours, through the shared pooler (GitHub's runners have no IPv6).
 - Config: `tenantVia` maps a table with no tenant column of its own to the tenant of
   a row it references (`{ "column": "task_id", "table": "tasks" }`), one hop. Check 1
   resolves ids through that row; check 2 counts rows with a join, and holds back when
