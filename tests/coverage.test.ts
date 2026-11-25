@@ -195,6 +195,45 @@ describe("coverage", () => {
     );
   });
 
+  it("calls a run where every read was ignored a gap: nothing was checked", async () => {
+    const withIgnore = { ...config, ignore: ["countries"] };
+    const summary = await runChecks(
+      [read({ table: "countries" })],
+      withIgnore,
+      directory,
+    );
+    expect(coverageGaps(summary)).toEqual(["no-reads"]);
+    expect(exitCode(summary, true)).toBe(3);
+  });
+
+  it("checks a configured table even when a hand-built config also ignores it", async () => {
+    const overlap = { ...config, ignore: ["projects"] };
+    const summary = await runChecks(
+      [read({ contentRange: "0-9/*" })],
+      overlap,
+      directory,
+    );
+    expect(summary.readsOnIgnoredTables).toBe(0);
+    expect(summary.findings.some((f) => f.kind === "crossed")).toBe(true);
+  });
+
+  it("does not crash on Object-named paths with a hand-built config either", async () => {
+    // A plain object, unlike parseConfig's prototype-free one.
+    const handBuilt = { ...config, tables: { ...config.tables } };
+    const summary = await runChecks(
+      [
+        read({
+          table: "constructor",
+          search: "?id=eq.1",
+          contentRange: "0-9/*",
+        }),
+      ],
+      handBuilt,
+      directory,
+    );
+    expect(summary.readsOnUnmappedTables).toBe(1);
+  });
+
   it("does not crash on a path named after an Object property", async () => {
     const summary = await runChecks(
       [

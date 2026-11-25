@@ -145,6 +145,9 @@ infer your authorization rules.
 
 - `ignore` — optional. Names in the request path you deliberately leave unchecked:
   tables every tenant may read, or `rpc` for every function under `/rest/v1/rpc/`.
+  Functions can only be ignored all at once; `rpc/name` is rejected. If every read in
+  the range was on an ignored name, nothing was checked, and that is still the
+  `no-reads` gap.
 
 Reads on tables missing from the config are counted and listed in the report, not
 checked, and are a coverage gap. Reads on names in `ignore` are counted on their own

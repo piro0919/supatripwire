@@ -62,6 +62,9 @@ describe("parseConfig", () => {
     expect(() => parseConfig({ ...valid, ignore: [""] })).toThrow(
       /ignore\[0\]/,
     );
+    expect(() => parseConfig({ ...valid, ignore: ["rpc/lookup"] })).toThrow(
+      /all at once/,
+    );
   });
 
   it("never resolves a path name to something inherited from Object", () => {

@@ -71,14 +71,16 @@ export async function runChecks(
       summary.firstReadAt = entry.timestamp;
     if (summary.lastReadAt === null || entry.timestamp > summary.lastReadAt)
       summary.lastReadAt = entry.timestamp;
-    if (ignored.has(entry.table)) {
-      summary.readsOnIgnoredTables++;
-      increment(summary.ignoredTables, entry.table);
-      continue;
-    }
+    // A configured table is checked even if a hand-built config also ignores
+    // it; parseConfig rejects that overlap.
     if (!tableConfig(config, entry.table)) {
-      summary.readsOnUnmappedTables++;
-      increment(summary.unmappedTables, entry.table);
+      if (ignored.has(entry.table)) {
+        summary.readsOnIgnoredTables++;
+        increment(summary.ignoredTables, entry.table);
+      } else {
+        summary.readsOnUnmappedTables++;
+        increment(summary.unmappedTables, entry.table);
+      }
       continue;
     }
     // An error response returned no rows, so it has nothing to judge. A

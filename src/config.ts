@@ -134,8 +134,14 @@ export function parseConfig(json: unknown): Config {
     if (!Array.isArray(root.ignore))
       throw new ConfigError("ignore must be an array of names");
     for (const [i, name] of root.ignore.entries()) {
-      // Compared with the request path only, never put into SQL.
+      // Compared with the first path segment after /rest/v1/, never put into
+      // SQL. A `/` or `?` could never match it: `rpc/fn` stays a silent no-op.
       const value = string(name, `ignore[${i}]`);
+      if (/[/?]/.test(value)) {
+        throw new ConfigError(
+          `ignore[${i}] is "${value}"; use the name right after /rest/v1/ (functions are ignored all at once, as "rpc")`,
+        );
+      }
       if (Object.hasOwn(tables, value)) {
         throw new ConfigError(
           `ignore[${i}] is "${value}", which is also in tables; list it in one of them`,

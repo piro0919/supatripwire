@@ -4,9 +4,9 @@ import type { CheckSummary } from "./findings.js";
  * Something that kept the run from checking every read it found, or that
  * suggests the setup is wrong. "No findings" means less while any is present.
  *
- * - `no-reads` — no signed-in reads in the range. Nothing was read, or the
- *   logs for the range are no longer kept: the logs API returns an empty
- *   result, not an error, either way.
+ * - `no-reads` — no signed-in reads in the range outside the config's
+ *   `ignore`. Nothing was read, or the logs for the range are no longer kept:
+ *   the logs API returns an empty result, not an error, either way.
  * - `unmapped-tables` — reads on tables missing from the config.
  * - `no-row-count` — successful reads whose `content_range` was unreadable.
  * - `users-without-membership` — users in findings with no membership rows.
@@ -36,7 +36,9 @@ export function exitCode(summary: CheckSummary, strict: boolean): number {
 
 export function coverageGaps(summary: CheckSummary): CoverageGap[] {
   const gaps: CoverageGap[] = [];
-  if (summary.readsScanned === 0) gaps.push("no-reads");
+  // Reads on ignored names were never going to be checked.
+  if (summary.readsScanned - summary.readsOnIgnoredTables === 0)
+    gaps.push("no-reads");
   if (summary.readsOnUnmappedTables > 0) gaps.push("unmapped-tables");
   if (summary.readsWithoutRowCount > 0) gaps.push("no-row-count");
   if (summary.usersWithoutMembership.size > 0)

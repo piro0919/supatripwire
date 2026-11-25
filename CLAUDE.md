@@ -28,7 +28,9 @@ An npm package whose main part is a **CLI that detects**, plus a small helper.
     using column-level `GRANT`. Names, notes and the like stay unreadable.
 - **Config** — the customer declares which column on which table holds the tenant, and
   where membership (user → tenants) lives. This declaration is the source of truth; we do
-  not try to infer the app's authorization rules.
+  not try to infer the app's authorization rules. `ignore` lists path names left
+  unchecked on purpose (shared lookup tables, `rpc` as a whole), so `--strict` does not
+  fail on them; a run where every read was ignored is still the `no-reads` gap.
 - **Output** — a report of suspicious reads.
 
 ### The two checks
@@ -157,7 +159,8 @@ Checked against real projects, not just docs.
 - **Small leaks under check 2.** One foreign row mixed into a result that stays under the
   ceiling is not detectable.
 - **Embedded selects** (`select=*,other(*)`) — `content_range` counts top-level rows only.
-- **RPC and views** — need their own tenant mapping in config.
+- **RPC and views** — need their own tenant mapping in config. Until then, `rpc` can
+  only be ignored as a whole.
 - **Breaches at a third party** the data was sent to. Monitoring your own project cannot
   see reads in someone else's.
 
@@ -188,7 +191,8 @@ src/
 ├── cli.ts                 # `supatripwire check`; exit 0 / 1 (crossed) / 2 (error) / 3 (--strict, gaps)
 ├── index.ts               # library exports
 ├── fetch.ts               # `supatripwire/fetch`: tripwireFetch (traceparent, x-forwarded-for)
-├── config.ts              # supatripwire.json parsing; names must be plain identifiers
+├── config.ts              # supatripwire.json parsing; table and column names must be plain
+│                          # identifiers; tables have no prototype (path names are untrusted)
 ├── logs.ts                # Management API log reader: 24h windows, paged by cursor
 ├── search.ts              # eq / in filters out of request.search, incl. and=() / or=()
 ├── redact.ts              # hides filter values in findings, except mapped id/tenant columns
