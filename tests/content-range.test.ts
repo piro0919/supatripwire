@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { rowsReturned } from "../src/content-range.js";
+import { rowsReturned, visibleAtLeast } from "../src/content-range.js";
 
 describe("rowsReturned", () => {
   it("counts the rows in a range", () => {
@@ -17,5 +17,22 @@ describe("rowsReturned", () => {
     expect(rowsReturned("")).toBeNull();
     expect(rowsReturned("bytes 0-4/5")).toBeNull();
     expect(rowsReturned("5-2/*")).toBeNull();
+  });
+});
+
+describe("visibleAtLeast", () => {
+  it("is the position after the last returned row", () => {
+    expect(visibleAtLeast("0-4/*")).toBe(5);
+    expect(visibleAtLeast("100-109/*")).toBe(110);
+  });
+
+  it("ignores the total, which may be an estimate", () => {
+    expect(visibleAtLeast("0-0/5000")).toBe(1);
+    expect(visibleAtLeast("*/5000")).toBe(0);
+  });
+
+  it("returns null when the header is missing or unreadable", () => {
+    expect(visibleAtLeast(undefined)).toBeNull();
+    expect(visibleAtLeast("5-2/*")).toBeNull();
   });
 });

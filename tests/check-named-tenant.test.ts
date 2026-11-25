@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { checkNamedTenant } from "../src/check-named-tenant.js";
 import { parseConfig } from "../src/config.js";
 import type { TenantDirectory } from "../src/directory.js";
 import type { ReadLogEntry } from "../src/logs.js";
+import { runChecks } from "../src/run-checks.js";
 
 // A made-up project: two orgs, each with projects, each project with tasks.
 const config = parseConfig({
@@ -44,6 +44,10 @@ function fakeDirectory() {
       }
       return result;
     },
+    // Large enough that check 2 never fires here; it has its own tests.
+    async rowCounts(_table, tenants) {
+      return new Map(tenants.map((t) => [t, 1_000_000]));
+    },
     async canonicalTenantIds(values) {
       calls.push(["canonical", values]);
       // Tenant ids here are case-insensitive, like uuids.
@@ -71,11 +75,11 @@ function read(overrides: Partial<ReadLogEntry>): ReadLogEntry {
 
 async function run(entries: ReadLogEntry[]) {
   const { directory, calls } = fakeDirectory();
-  const summary = await checkNamedTenant(entries, config, directory);
+  const summary = await runChecks(entries, config, directory);
   return { summary, calls };
 }
 
-describe("checkNamedTenant", () => {
+describe("check 1: the read named another tenant", () => {
   it("reports nothing when the filter names only the caller's tenant", async () => {
     const { summary } = await run([
       read({ search: "?select=*&org_id=eq.org-a", contentRange: "0-9/*" }),
@@ -169,8 +173,10 @@ describe("checkNamedTenant", () => {
     const { summary } = await run([
       read({ userId: "carol", search: "?org_id=eq.org-a" }),
     ]);
+    // Check 2 also sees rows against an empty ceiling; it holds back too.
     expect(summary.findings).toMatchObject([
-      { kind: "unconfirmed", memberTenants: [] },
+      { check: "named-tenant", kind: "unconfirmed", memberTenants: [] },
+      { check: "row-ceiling", kind: "unconfirmed", memberTenants: [] },
     ]);
     expect([...summary.usersWithoutMembership]).toEqual(["carol"]);
   });
@@ -208,12 +214,15 @@ describe("checkNamedTenant", () => {
       read({ search: "?name=eq.org-b&status=in.%28a%2Cb%29" }),
     ]);
     expect(summary.findings).toEqual([]);
-    expect(calls).toEqual([]);
+    expect(calls).toEqual(
+      // Only the membership, which check 2 needs because rows came back.
+      [["memberships", ["alice"]]],
+    );
   });
 
   it("looks each user and id up once across the run", async () => {
     const { directory, calls } = fakeDirectory();
-    await checkNamedTenant(
+    await runChecks(
       [
         read({ search: "?id=eq.p-b1" }),
         read({ search: "?id=eq.p-b1" }),
@@ -236,7 +245,7 @@ describe("checkNamedTenant", () => {
       yield read({ search: "?org_id=eq.org-b" });
     }
     const { directory } = fakeDirectory();
-    const summary = await checkNamedTenant(source(), config, directory);
+    const summary = await runChecks(source(), config, directory);
     expect(summary.findings).toHaveLength(1);
   });
 
@@ -265,9 +274,12 @@ describe("checkNamedTenant", () => {
       async canonicalTenantIds(values) {
         return new Map(values.map((v) => [v, v]));
       },
+      async rowCounts(_table, tenants) {
+        return new Map(tenants.map((t) => [t, 1_000_000]));
+      },
       async close() {},
     };
-    const summary = await checkNamedTenant(
+    const summary = await runChecks(
       [read({ table: "notes", search: "?tenant_id=eq.x1" })],
       named,
       directory,

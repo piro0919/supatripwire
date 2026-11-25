@@ -1,9 +1,9 @@
 import pg from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { checkNamedTenant } from "../src/check-named-tenant.js";
 import { parseConfig } from "../src/config.js";
 import { createPgDirectory, type TenantDirectory } from "../src/directory.js";
 import { fetchReadLogs } from "../src/logs.js";
+import { runChecks } from "../src/run-checks.js";
 
 /**
  * Runs against a real Postgres. CI provides one; locally, point
@@ -115,6 +115,21 @@ describe.skipIf(!adminUrl)("createPgDirectory against Postgres", () => {
     });
   });
 
+  it("counts rows per tenant with only column grants and RLS on", async () => {
+    const projects = await directory.rowCounts("projects", [
+      ORG_A,
+      ORG_B,
+      "00000000-0000-4000-8000-0000000000ff",
+    ]);
+    expect(Object.fromEntries(projects)).toEqual({
+      [ORG_A]: 1,
+      [ORG_B]: 1,
+      "00000000-0000-4000-8000-0000000000ff": 0,
+    });
+    const tickets = await directory.rowCounts("tickets", [ORG_A, ORG_B]);
+    expect(Object.fromEntries(tickets)).toEqual({ [ORG_A]: 0, [ORG_B]: 1 });
+  });
+
   it("maps integer ids", async () => {
     const result = await directory.tenantsOfRows("tickets", ["7", "8"]);
     expect(Object.fromEntries(result)).toEqual({ "7": ORG_B });
@@ -147,13 +162,17 @@ describe.skipIf(!adminUrl)("createPgDirectory against Postgres", () => {
       logRow(2, USER_1, "/rest/v1/tickets", `?org_id=eq.${ORG_B}`, "*/*"),
       // USER_2 belongs to both orgs: nothing to report.
       logRow(3, USER_2, "/rest/v1/projects", `?id=eq.${PROJECT_B}`, "0-0/*"),
+      // USER_1 lists projects unfiltered and gets 2; org A holds 1: crossed.
+      logRow(4, USER_1, "/rest/v1/projects", "?select=id", "0-1/*"),
+      // USER_2 does the same; orgs A and B hold 2 between them: fine.
+      logRow(5, USER_2, "/rest/v1/projects", "?select=id", "0-1/*"),
     ];
     const fetchFn = (async () =>
       new Response(JSON.stringify({ result: logRows }), {
         status: 200,
       })) as unknown as typeof fetch;
 
-    const summary = await checkNamedTenant(
+    const summary = await runChecks(
       fetchReadLogs({
         projectRef: config.projectRef,
         accessToken: "token",
@@ -164,12 +183,11 @@ describe.skipIf(!adminUrl)("createPgDirectory against Postgres", () => {
       config,
       directory,
     );
-    expect(summary.readsScanned).toBe(3);
-    expect(
-      summary.findings.map((f) => [f.kind, f.table, f.foreignTenants]),
-    ).toEqual([
-      ["crossed", "projects", [ORG_B]],
-      ["attempt", "tickets", [ORG_B]],
+    expect(summary.readsScanned).toBe(5);
+    expect(summary.findings.map((f) => [f.check, f.kind, f.table])).toEqual([
+      ["named-tenant", "crossed", "projects"],
+      ["named-tenant", "attempt", "tickets"],
+      ["row-ceiling", "crossed", "projects"],
     ]);
   });
 });

@@ -55,4 +55,4 @@ jobs:
         with:
           node-version: 20
       - run: node dist/cli.js --help
-      - run: node --input-type=module -e "const m = await import('supatripwire'); if (typeof m.checkNamedTenant !== 'function') process.exit(1);"
+      - run: node --input-type=module -e "const m = await import('supatripwire'); if (typeof m.runChecks !== 'function') process.exit(1);"

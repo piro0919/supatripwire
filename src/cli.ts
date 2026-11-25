@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
-import { checkNamedTenant } from "./check-named-tenant.js";
 import { ConfigError, loadConfig } from "./config.js";
 import { createPgDirectory } from "./directory.js";
 import { fetchReadLogs, LogsApiError } from "./logs.js";
 import { formatJson, formatText } from "./report.js";
+import { runChecks } from "./run-checks.js";
 
 const HELP = `Usage: supatripwire check [options]
 
 Reads the project's API gateway logs and reports reads that named a tenant
-the caller does not belong to.
+the caller does not belong to, or saw more rows than the caller's tenants hold.
 
 Options:
   -c, --config <path>   Config file (default: supatripwire.json)
@@ -108,7 +108,7 @@ async function main(argv: string[]): Promise<number> {
       from,
       to,
     });
-    const summary = await checkNamedTenant(entries, config, directory);
+    const summary = await runChecks(entries, config, directory);
     const range = { from, to };
     process.stdout.write(
       values.json ? formatJson(summary, range) : formatText(summary, range),

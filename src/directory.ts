@@ -16,6 +16,11 @@ export type TenantDirectory = {
    * Values that do not parse are left out.
    */
   canonicalTenantIds(values: string[]): Promise<Map<string, string>>;
+  /**
+   * Rows of `table` in each of `tenants` (canonical ids from membership).
+   * Tenants with no rows map to 0.
+   */
+  rowCounts(table: string, tenants: string[]): Promise<Map<string, number>>;
   close(): Promise<void>;
 };
 
@@ -148,6 +153,35 @@ export function createPgDirectory(
           }
         }
       }
+      return result;
+    },
+
+    async rowCounts(table, tenants) {
+      const result = new Map<string, number>(tenants.map((t) => [t, 0]));
+      const t = config.tables[table];
+      if (!t || tenants.length === 0) return result;
+      const tq = quoteIdent(table);
+      const c = quoteIdent(t.tenantColumn);
+      // Grouped by the input spelling so the keys match the membership ids.
+      const count = async (cast: string) =>
+        pool.query<{ k: string; n: number }>(
+          `select u.input as k, count(*)::int as n
+             from unnest($1::text[]) as u(input)
+             join ${tq} as r on ${cast}
+            group by u.input`,
+          [tenants],
+        );
+      const type = await columnType(table, t.tenantColumn);
+      let rows: Array<{ k: string; n: number }> | null = null;
+      if (type) {
+        try {
+          rows = (await count(`r.${c} = u.input::${type}`)).rows;
+        } catch (error) {
+          if (!isParseError(error)) throw error;
+        }
+      }
+      rows ??= (await count(`r.${c}::text = u.input`)).rows;
+      for (const row of rows) result.set(row.k, row.n);
       return result;
     },
 

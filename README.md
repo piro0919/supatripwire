@@ -6,18 +6,18 @@ A broken authorization check returns 200. Error monitoring never sees it, and in
 multi-tenant app the most common breach is one tenant reading another's rows through a
 missing or subtly wrong RLS policy. supatripwire reads your project's API gateway logs
 and a few id-to-tenant mappings from your database, and reports reads that named a
-tenant the caller does not belong to.
+tenant the caller does not belong to, or saw more rows than the caller's tenants hold.
 
 Nothing sits in the request path, and no row contents are read.
 
-> **Status: early.** Check 1 (a read that named another tenant) is implemented.
-> Check 2 (more rows than the caller could see) and the request-header helper are not
-> yet.
+> **Status: early.** Both checks are implemented. The request-header helper is not yet.
 
 ## What it reports
 
-For every signed-in `GET` to PostgREST in the time range, supatripwire reads the
-filter the request sent (`tenant_id=eq.…`, `id=eq.…`, `project_id=in.(…)`), resolves
+For every signed-in `GET` to PostgREST in the time range, supatripwire runs two checks.
+
+**Check 1 — the read named another tenant.** supatripwire reads the filter the request
+sent (`tenant_id=eq.…`, `id=eq.…`, `project_id=in.(…)`), resolves
 each id to a tenant, and compares the result with the caller's memberships.
 
 | Result                   | Meaning                                                                                                                                                                                    |
@@ -25,6 +25,18 @@ each id to a tenant, and compares the result with the caller's memberships.
 | **Data crossed tenants** | Rows came back, and one filter named only tenants the caller is not in. Every returned row matched that filter, so every returned row belongs to another tenant.                           |
 | **Not provably foreign** | Another tenant was named and rows came back, but the same filter also named the caller's own tenant, or the row count was not logged. With correct RLS the rows would be the caller's own. |
 | **Nothing returned**     | Another tenant was named and zero rows came back. RLS stopped it — an attempt worth knowing about.                                                                                         |
+
+**Check 2 — the read saw more rows than the caller's tenants hold.** Filters only ever
+narrow, so with correct RLS a query can never see more rows than the table holds inside
+the caller's tenants. The returned range gives a floor on what the query saw: a response
+with `Content-Range: 100-109/*` means at least 110 rows were visible, even though only
+10 came back. When that floor is above the caller's rows, rows from other tenants were
+visible — whatever the filter said, and also for requests with no filter at all. This
+is reported as data crossed. The total after the slash is ignored, because with
+`Prefer: count=planned` or `count=estimated` it is an estimate.
+
+For a user with no membership rows at all, both checks hold back to "not provably
+foreign": that more often means the membership mapping or the role's access is wrong.
 
 The command exits with status 1 when data crossed, 0 otherwise, and 2 on error, so a
 scheduled job can fail loudly.
@@ -128,6 +140,15 @@ Pro, 28 on Team, 90 on Enterprise.
 - **Schemas other than the default one.** The table is taken from the request path.
 - **Past memberships.** Membership is read as it is now. A user who has since left a
   tenant shows up as reading a tenant they do not belong to.
+- **Rows deleted since the read** (check 2). Row counts are taken when the check runs.
+  If a tenant's rows were hard-deleted between the read and the check, an honest read
+  can exceed the smaller count. Running the check soon after the reads keeps this rare.
+- **Rows every tenant may see** (check 2). If your RLS lets everyone read some rows of a
+  table — shared templates with a null tenant, say — those rows are not in the ceiling,
+  and reads that include them are reported. There is no per-table switch for check 2
+  yet; leaving the table out of the config turns off check 1 for it as well.
+- **Small leaks under check 2.** One foreign row mixed into a result that stays under
+  the ceiling is not detectable.
 - **Breaches at a third party** the data was sent to. Monitoring your own project
   cannot see reads in someone else's.
 

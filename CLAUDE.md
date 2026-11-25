@@ -5,8 +5,8 @@ API gateway logs and a few id-to-tenant mappings from the database, and reports 
 named a tenant the caller does not belong to — or returned more rows than the caller could
 possibly see. Nothing sits in the request path and no row contents are read.
 
-Status: agreed in a sounding-board session on 2026-11-25. Package skeleton and check 1
-implemented; check 2 and the helper not yet. Not published.
+Status: agreed in a sounding-board session on 2026-11-25. Package skeleton and both checks
+implemented; the helper not yet. Not published.
 
 ## Why this exists
 
@@ -52,6 +52,12 @@ An npm package whose main part is a **CLI that detects**, plus a small helper.
    rows returned can never exceed the rows of that table inside the caller's tenants. If
    they do, data crossed — certain, whatever the filter said. This also catches requests
    with no filter at all.
+   As implemented: the "rows seen" side is `last + 1` from `content_range` (`100-109/*`
+   → at least 110 visible), so paging with an offset is caught even when each page is
+   small. The total after the slash is ignored: with `count=planned` or `estimated` it is
+   a planner estimate, and the log does not say which was asked for. The ceiling is
+   counted when the check runs, so hard deletes between the read and the check, and rows
+   RLS lets every tenant see (null tenant), can cause findings; both are in the README.
 
 ### The helper
 
@@ -143,10 +149,14 @@ src/
 ├── index.ts               # library exports
 ├── config.ts              # supatripwire.json parsing; names must be plain identifiers
 ├── logs.ts                # Management API log reader: 24h windows, paged by cursor
-├── search.ts              # top-level eq / in filters out of request.search
-├── content-range.ts       # rows returned, or null when unknown
-├── directory.ts           # read-only role lookups (memberships, row → tenant)
+├── search.ts              # eq / in filters out of request.search, incl. and=() / or=()
+├── content-range.ts       # rows returned; fewest rows visible (last + 1)
+├── directory.ts           # read-only role lookups (memberships, row → tenant, counts)
+├── lookups.ts             # per-run cache; prefetches what a batch of entries needs
+├── run-checks.ts          # one pass over the logs, both checks per entry
+├── findings.ts            # finding and summary types
 ├── check-named-tenant.ts  # check 1
+├── check-row-ceiling.ts   # check 2
 └── report.ts              # text and JSON output
 tests/                     # vitest; directory.test.ts needs SUPATRIPWIRE_TEST_DATABASE_URL
 ```

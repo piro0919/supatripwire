@@ -1,18 +1,15 @@
-import type {
-  NamedTenantFinding,
-  NamedTenantSummary,
-} from "./check-named-tenant.js";
+import type { CheckSummary, Finding } from "./findings.js";
 
 const ORDER = { crossed: 0, unconfirmed: 1, attempt: 2 } as const;
 
 const HEADINGS = {
   crossed: "Data crossed tenants",
-  unconfirmed: "Another tenant named, rows returned, not provably foreign",
+  unconfirmed: "Points at another tenant, not proven",
   attempt: "Another tenant named, nothing returned",
 } as const;
 
 export function formatText(
-  summary: NamedTenantSummary,
+  summary: CheckSummary,
   range: { from: Date; to: Date },
 ): string {
   const lines: string[] = [];
@@ -44,7 +41,7 @@ export function formatText(
   if (summary.usersWithoutMembership.size > 0) {
     lines.push("");
     lines.push(
-      `Warning — ${summary.usersWithoutMembership.size} users named a tenant but have no membership rows.`,
+      `Warning — ${summary.usersWithoutMembership.size} users in the findings have no membership rows.`,
     );
     lines.push(
       "  Their reads are never reported as crossed. If this is most users, check",
@@ -57,18 +54,27 @@ export function formatText(
   return `${lines.join("\n")}\n`;
 }
 
-function formatFinding(f: NamedTenantFinding): string[] {
+const CHECK_LABELS = {
+  "named-tenant": "named another tenant",
+  "row-ceiling": "more rows than their tenants hold",
+} as const;
+
+function formatFinding(f: Finding): string[] {
+  const evidence =
+    f.check === "named-tenant"
+      ? `    named tenants not theirs: ${f.foreignTenants.join(", ")}`
+      : `    saw at least ${f.visibleAtLeast} rows; their tenants hold ${f.ceiling}`;
   return [
-    `  ${f.timestamp}  ${f.table}  user ${f.userId}`,
+    `  ${f.timestamp}  ${f.table}  user ${f.userId}  (${CHECK_LABELS[f.check]})`,
     `    rows: ${f.rows ?? "unknown"}  status: ${f.status}  log id: ${f.logId}`,
-    `    named tenants not theirs: ${f.foreignTenants.join(", ")}`,
+    evidence,
     `    their tenants: ${f.memberTenants.length > 0 ? f.memberTenants.join(", ") : "(none)"}`,
     `    query: ${f.search}`,
   ];
 }
 
 export function formatJson(
-  summary: NamedTenantSummary,
+  summary: CheckSummary,
   range: { from: Date; to: Date },
 ): string {
   return `${JSON.stringify(
