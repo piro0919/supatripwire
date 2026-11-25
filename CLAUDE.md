@@ -200,6 +200,18 @@ tests/                     # vitest; directory.test.ts needs SUPATRIPWIRE_TEST_D
 - TypeScript, ESM only, Node >= 20. Runtime dependency: `pg`; peer:
   `@opentelemetry/api` (the helper only). Biome, tsup, vitest,
   lefthook — same setup as the other piro0919 packages.
+- secretlint runs on staged files before each commit and on the whole tree in CI. The
+  repository is private on GitHub, and the API reports no secret scanning or push
+  protection settings for it (`security_and_analysis: null`, 2026-11-25), so this is the
+  only check. Its recommended preset catches `postgres://` URLs with
+  a password but not Supabase keys, so `.secretlintrc.json` adds patterns for
+  `sbp_…` (personal access token) and `sb_secret_…` (secret API key). Legacy
+  `service_role` keys are JWTs that cannot be told apart from the public anon key, so
+  they are not matched. Since v14 the preset and the pattern rule are built into
+  `secretlint`; the separate `@secretlint/secretlint-rule-*` packages are deprecated.
+- commitlint checks commit messages (`@commitlint/config-conventional`, unchanged).
+  The `subject-case: lower-case` override some sibling repos use is left out: it
+  rejects subjects that name "Supabase" or other proper nouns.
 - `directory.ts` compares ids in the column's own type (`u.input::<type>`) so the
   primary-key index is used, keys results by the string the log spelled, and falls back
   to text comparison when a value does not parse. Only the id and tenant columns are
@@ -212,6 +224,7 @@ tests/                     # vitest; directory.test.ts needs SUPATRIPWIRE_TEST_D
 pnpm test        # vitest
 pnpm typecheck   # tsc --noEmit
 pnpm lint        # biome check
+pnpm secretlint  # secrets in the tree
 pnpm build:lib   # tsup -> dist
 pnpm check:package
 ```
