@@ -367,6 +367,82 @@ describe("coverage", () => {
     expect(exitCode(summary, false)).toBe(3);
   });
 
+  it("holds back check 2 on a tenantVia table when the table it counts through is limited", async () => {
+    const viaConfig = parseConfig({
+      projectRef: "abcdefghijklmnopqrst",
+      membership: {
+        table: "memberships",
+        userColumn: "user_id",
+        tenantColumn: "org_id",
+      },
+      tables: {
+        projects: { tenantColumn: "org_id" },
+        comments: { tenantVia: { column: "project_id", table: "projects" } },
+      },
+    });
+    const partialProjects: TenantDirectory = {
+      ...directory,
+      async inspectAccess() {
+        return [
+          {
+            table: "projects",
+            visibility: "partial",
+            missingColumns: [],
+            unreadableColumns: [],
+          },
+          {
+            table: "comments",
+            visibility: "all",
+            missingColumns: [],
+            unreadableColumns: [],
+          },
+        ];
+      },
+    };
+    const summary = await runChecks(
+      [read({ table: "comments", contentRange: "0-9/*" })],
+      viaConfig,
+      partialProjects,
+    );
+    expect(summary.findings.map((f) => [f.check, f.kind])).toEqual([
+      ["row-ceiling", "unconfirmed"],
+    ]);
+    expect(summary.crossedHeldBack).toBe(1);
+    expect(Object.fromEntries(summary.tablesWithLimitedVisibility)).toEqual({
+      projects: "partial",
+    });
+  });
+
+  it("names the table a tenantVia table counts through when its ceiling is 0", async () => {
+    const viaConfig = parseConfig({
+      projectRef: "abcdefghijklmnopqrst",
+      membership: {
+        table: "memberships",
+        userColumn: "user_id",
+        tenantColumn: "org_id",
+      },
+      tables: {
+        projects: { tenantColumn: "org_id" },
+        comments: { tenantVia: { column: "project_id", table: "projects" } },
+      },
+    });
+    const empty: TenantDirectory = {
+      ...directory,
+      async rowCounts(_table, tenants) {
+        return new Map(tenants.map((t) => [t, 0]));
+      },
+    };
+    const summary = await runChecks(
+      [read({ table: "comments", contentRange: "0-0/*" })],
+      viaConfig,
+      empty,
+    );
+    expect([...summary.tablesWithEmptyCeiling].sort()).toEqual([
+      "comments",
+      "projects",
+    ]);
+  });
+
   it("does not call a limited table a gap when no read touched it", async () => {
     const elsewhere: TenantDirectory = {
       ...directory,

@@ -83,7 +83,8 @@ export async function runChecks(
         if (
           finding.kind === "crossed" &&
           (membershipVisibility !== undefined ||
-            (finding.check === "row-ceiling" && limited.has(finding.table)))
+            (finding.check === "row-ceiling" &&
+              countedTables(config, finding.table).some((t) => limited.has(t))))
         ) {
           finding.kind = "unconfirmed";
           summary.crossedHeldBack++;
@@ -92,7 +93,10 @@ export async function runChecks(
         if (finding.memberTenants.length === 0) {
           summary.usersWithoutMembership.add(finding.userId);
         } else if (finding.check === "row-ceiling" && finding.ceiling === 0) {
-          summary.tablesWithEmptyCeiling.add(finding.table);
+          // A role that cannot see the rows of the table a tenantVia table
+          // counts through also gives 0, so name that table too.
+          for (const t of countedTables(config, finding.table))
+            summary.tablesWithEmptyCeiling.add(t);
         }
       }
     }
@@ -118,10 +122,13 @@ export async function runChecks(
       }
       continue;
     }
-    // Only tables this run read count as a gap, plus membership (above).
-    const visibility = limited.get(entry.table);
-    if (visibility)
-      summary.tablesWithLimitedVisibility.set(entry.table, visibility);
+    // Only tables this run read count as a gap — with the table a tenantVia
+    // table counts through — plus membership (above).
+    for (const table of countedTables(config, entry.table)) {
+      const visibility = limited.get(table);
+      if (visibility)
+        summary.tablesWithLimitedVisibility.set(table, visibility);
+    }
     // An error response returned no rows, so it has nothing to judge. A
     // missing status is not an error: it may have returned rows.
     const failed =
@@ -135,6 +142,16 @@ export async function runChecks(
   }
   await flush();
   return summary;
+}
+
+/**
+ * The tables check 2 counts rows in for a read of `table`: the table itself,
+ * and for a tenantVia table also the table holding the tenant. If the role
+ * sees only some rows of either, the ceiling can come out too low.
+ */
+function countedTables(config: Config, table: string): string[] {
+  const via = tableConfig(config, table)?.tenantVia;
+  return via ? [table, via.table] : [table];
 }
 
 function increment(counts: Map<string, number>, key: string): void {

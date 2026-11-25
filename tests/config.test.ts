@@ -67,6 +67,52 @@ describe("parseConfig", () => {
     );
   });
 
+  it("reads tenantVia, and treats its column as a reference", () => {
+    const config = parseConfig({
+      ...valid,
+      tables: {
+        ...valid.tables,
+        comments: { tenantVia: { column: "task_id", table: "tasks" } },
+      },
+    });
+    const comments = tableConfig(config, "comments");
+    expect(comments?.tenantVia).toEqual({ column: "task_id", table: "tasks" });
+    expect(comments && referencedTable(comments, "task_id")).toBe("tasks");
+  });
+
+  it("rejects tenantVia that is missing, doubled, chained or conflicting", () => {
+    const withComments = (comments: unknown, extra: object = {}) =>
+      parseConfig({
+        ...valid,
+        tables: { ...valid.tables, ...extra, comments },
+      });
+    expect(() => withComments({})).toThrow(/needs tenantColumn, or tenantVia/);
+    expect(() =>
+      withComments({
+        tenantColumn: "org_id",
+        tenantVia: { column: "task_id", table: "tasks" },
+      }),
+    ).toThrow(/has both tenantColumn and tenantVia/);
+    expect(() =>
+      withComments({ tenantVia: { column: "task_id", table: "nowhere" } }),
+    ).toThrow(/not in tables/);
+    expect(() =>
+      withComments({ tenantVia: { column: "task id", table: "tasks" } }),
+    ).toThrow(/plain identifier/);
+    expect(() =>
+      withComments(
+        { tenantVia: { column: "reply_to", table: "replies" } },
+        { replies: { tenantVia: { column: "task_id", table: "tasks" } } },
+      ),
+    ).toThrow(/no tenantColumn of its own/);
+    expect(() =>
+      withComments({
+        tenantVia: { column: "task_id", table: "tasks" },
+        references: { task_id: "projects" },
+      }),
+    ).toThrow(/but tenantVia says/);
+  });
+
   it("never resolves a path name to something inherited from Object", () => {
     const config = parseConfig(valid);
     for (const name of [

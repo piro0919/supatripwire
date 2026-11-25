@@ -1,6 +1,11 @@
 import pg from "pg";
 import { inspectAccess, type TableAccess } from "./access.js";
-import { type Config, tableConfig } from "./config.js";
+import {
+  type Config,
+  type TenantSource,
+  tableConfig,
+  tenantSource,
+} from "./config.js";
 
 /**
  * The few id-to-tenant facts the checks need. Backed by the read-only role in
@@ -121,6 +126,57 @@ export function createPgDirectory(
     });
   }
 
+  /**
+   * Like `lookup`, for a tenantVia table: matches `values` on its `column`,
+   * then reads the tenant from the row it references.
+   */
+  async function lookupVia(
+    table: string,
+    column: string,
+    source: TenantSource & { via: NonNullable<TenantSource["via"]> },
+    values: string[],
+  ): Promise<Array<{ k: string; v: string | null }>> {
+    const x = quoteIdent(table);
+    const c = quoteIdent(column);
+    const type = await columnType(table, column);
+    const joinOn = await viaJoin(table, source.table, source.via);
+    return typedOrText(type, values, async (cast, batch) => {
+      const on = cast ? `x.${c} = u.input::${cast}` : `x.${c}::text = u.input`;
+      const r = await pool.query<{ k: string; v: string | null }>(
+        `select u.input as k, r.${quoteIdent(source.column)}::text as v
+           from unnest($1::text[]) as u(input)
+           join ${x} as x on ${on}
+           join ${quoteIdent(source.table)} as r on ${joinOn}`,
+        [batch],
+      );
+      return r.rows;
+    });
+  }
+
+  /**
+   * The join condition from a tenantVia table `x` to the row `r` it
+   * references. Compared as is when both columns have the same type, which
+   * keeps the index usable; as text otherwise, so a `text` column holding
+   * uuids cannot fail the run with "operator does not exist". The text
+   * comparison can miss differently spelled values (upper-case uuids), which
+   * only leaves a row out — never assigns it to a wrong tenant.
+   */
+  async function viaJoin(
+    table: string,
+    target: string,
+    via: NonNullable<TenantSource["via"]>,
+  ): Promise<string> {
+    const [from, to] = await Promise.all([
+      columnType(table, via.column),
+      columnType(target, via.idColumn),
+    ]);
+    const xc = `x.${quoteIdent(via.column)}`;
+    const rc = `r.${quoteIdent(via.idColumn)}`;
+    return from !== null && from === to
+      ? `${rc} = ${xc}`
+      : `${rc}::text = ${xc}::text`;
+  }
+
   return {
     async membershipsOf(userIds) {
       const result = new Map<string, Set<string>>(
@@ -142,9 +198,13 @@ export function createPgDirectory(
     async tenantsOfRows(table, ids) {
       const result = new Map<string, string>();
       const t = tableConfig(config, table);
-      if (!t || ids.length === 0) return result;
+      const source = tenantSource(config, table);
+      if (!t || !source || ids.length === 0) return result;
       const idColumn = t.idColumn ?? "id";
-      for (const row of await lookup(table, idColumn, t.tenantColumn, ids)) {
+      const rows = source.via
+        ? await lookupVia(table, idColumn, { ...source, via: source.via }, ids)
+        : await lookup(table, idColumn, source.column, ids);
+      for (const row of rows) {
         if (row.v !== null) result.set(row.k, row.v);
       }
       return result;
@@ -183,11 +243,16 @@ export function createPgDirectory(
 
     async rowCounts(table, tenants) {
       const result = new Map<string, number>(tenants.map((t) => [t, 0]));
-      const t = tableConfig(config, table);
-      if (!t || tenants.length === 0) return result;
-      const tq = quoteIdent(table);
-      const c = quoteIdent(t.tenantColumn);
-      const type = await columnType(table, t.tenantColumn);
+      const source = tenantSource(config, table);
+      if (!source || tenants.length === 0) return result;
+      const tq = quoteIdent(source.table);
+      const c = quoteIdent(source.column);
+      const type = await columnType(source.table, source.column);
+      // For a tenantVia table, rows are counted through the referenced row:
+      // `r` is the table holding the tenant, `x` the table read.
+      const via = source.via
+        ? `join ${quoteIdent(table)} as x on ${await viaJoin(table, source.table, source.via)}`
+        : "";
       // Grouped by the input spelling so the keys match the membership ids.
       // bigint comes back from pg as a string.
       const rows = await typedOrText(type, tenants, async (cast, batch) => {
@@ -198,6 +263,7 @@ export function createPgDirectory(
           `select u.input as k, count(*) as n
              from unnest($1::text[]) as u(input)
              join ${tq} as r on ${on}
+             ${via}
             group by u.input`,
           [batch],
         );

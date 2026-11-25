@@ -42,8 +42,8 @@ Check 2 does the same when the table holds no rows in the caller's tenants, and 
 report names those tables.
 
 Each finding shows the request's query with filter values hidden (`***`), except the
-ids matched with `eq`, `neq`, `in` or `is` on the table's `tenantColumn`, `idColumn`
-and `references` — what you need to follow it up. Any other value may be a name or an
+ids matched with `eq`, `neq`, `in` or `is` on the table's `tenantColumn`, `idColumn`,
+`references` and `tenantVia` column — what you need to follow it up. Any other value may be a name or an
 email, and the report often ends up in CI logs: `?org_id=eq.…&name=ilike.***`. Use the
 log id to see the full request in the Supabase dashboard.
 
@@ -83,7 +83,8 @@ Crossed data still exits with 1.
 `limited-visibility` comes from Postgres's catalog, read before any log: the
 membership table, or a table this run read, where RLS may hide rows from the read-only
 role — no SELECT policy for it, or none that is plainly `using (true)`, or a
-restrictive policy on top — or whose catalog entries could not be read. Check 2 counts
+restrictive policy on top — or whose catalog entries could not be read. For a
+`tenantVia` table, the table it reaches the tenant through counts too. Check 2 counts
 the caller's rows through that role, so a role that sees only some of them would turn
 honest reads into "data crossed". Findings that depend on such a table are held back
 to "not provably foreign"; if it is the membership table, that is every finding. A
@@ -103,12 +104,16 @@ grant usage on schema public to supatripwire;
 grant select (user_id, org_id) on public.memberships to supatripwire;
 grant select (id, org_id) on public.projects to supatripwire;
 grant select (id, org_id) on public.tasks to supatripwire;
+-- A table with no tenant column (`tenantVia` below): its id and the column it
+-- reaches the tenant through.
+grant select (id, task_id) on public.comments to supatripwire;
 
 -- With RLS on, a role without a policy sees zero rows. Let this role see every
 -- row; the column grants above still limit it to the id and tenant columns.
 create policy supatripwire_read on public.memberships for select to supatripwire using (true);
 create policy supatripwire_read on public.projects for select to supatripwire using (true);
 create policy supatripwire_read on public.tasks for select to supatripwire using (true);
+create policy supatripwire_read on public.comments for select to supatripwire using (true);
 ```
 
 Column-level `GRANT` is enough: supatripwire selects only the columns named in the
@@ -149,7 +154,8 @@ infer your authorization rules.
     "tasks": {
       "tenantColumn": "org_id",
       "references": { "project_id": "projects" }
-    }
+    },
+    "comments": { "tenantVia": { "column": "task_id", "table": "tasks" } }
   },
   "ignore": ["countries", "rpc"]
 }
@@ -158,6 +164,14 @@ infer your authorization rules.
 - `tables` is keyed by the name in the request path (`/rest/v1/<name>`).
 - `tenantColumn` — the column holding the tenant id. On the tenants table itself, use
   its primary key.
+- `tenantVia` — instead of `tenantColumn`, for a table with no tenant column whose
+  rows belong to the tenant of a row they reference. `column` holds the id of a row in
+  `table`, and `table` must have a `tenantColumn` of its own: one hop only. Check 1
+  resolves an id through that row, and a filter on `column` counts as a reference.
+  Check 2 counts the table's rows by joining to `table`, so a row whose `column` is
+  null is in no tenant's ceiling, and the role must see every row of both tables. If
+  `column` and the referenced id differ in type (a `text` column holding uuids), they
+  are compared as text, so values spelled differently do not match.
 - `idColumn` — the primary key, if it is not `id`.
 - `references` — columns holding the id of a row in another listed table. A filter on
   such a column is resolved through that table.

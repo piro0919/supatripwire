@@ -67,7 +67,10 @@ export function tablesToInspect(
   add(m.table, [m.userColumn, m.tenantColumn]);
   for (const name of Object.keys(config.tables)) {
     const t = tableConfig(config, name);
-    if (t) add(name, [t.idColumn ?? "id", t.tenantColumn]);
+    if (!t) continue;
+    // `?.` also for hand-built configs that parseConfig would have rejected.
+    const tenant = t.tenantColumn ?? t.tenantVia?.column;
+    add(name, [t.idColumn ?? "id", ...(tenant ? [tenant] : [])]);
   }
   return [...result].map(([table, columns]) => ({
     table,

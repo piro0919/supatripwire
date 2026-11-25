@@ -73,8 +73,10 @@ export function redactSearch(
 
 function keptColumns(table: TableConfig | undefined): Set<string> {
   if (!table) return new Set();
+  // `?.` also for hand-built configs that parseConfig would have rejected.
+  const tenant = table.tenantColumn ?? table.tenantVia?.column;
   return new Set([
-    table.tenantColumn,
+    ...(tenant ? [tenant] : []),
     table.idColumn ?? "id",
     ...Object.keys(table.references ?? {}),
   ]);

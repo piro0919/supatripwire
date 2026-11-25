@@ -30,6 +30,8 @@ const config = parseConfig({
   tables: {
     projects: { tenantColumn: "org_id" },
     tickets: { tenantColumn: "org_id" },
+    comments: { tenantVia: { column: "project_id", table: "projects" } },
+    notes: { tenantVia: { column: "project_ref", table: "projects" } },
   },
 });
 
@@ -51,18 +53,30 @@ describe.skipIf(!adminUrl)("createPgDirectory against Postgres", () => {
       insert into memberships values ('${USER_1}', '${ORG_A}', 'secret'), ('${USER_2}', '${ORG_A}', null), ('${USER_2}', '${ORG_B}', null);
       insert into projects values ('${PROJECT_A}', '${ORG_A}', 'secret'), ('${PROJECT_B}', '${ORG_B}', 'secret');
       insert into tickets values (7, '${ORG_B}', 'secret');
+      -- No tenant column: each comment belongs to its project's org.
+      create table comments (id int primary key, project_id uuid references projects, body text);
+      insert into comments values (1, '${PROJECT_A}', 'secret'), (2, '${PROJECT_B}', 'secret'), (3, '${PROJECT_B}', 'secret'), (4, null, 'secret');
+      -- The reference held as text while projects.id is uuid.
+      create table notes (id int primary key, project_ref text, body text);
+      insert into notes values (1, '${PROJECT_B}', 'secret');
       create role ${role} login password 'pw';
+      grant select (id, project_ref) on notes to ${role};
+      alter table notes enable row level security;
+      create policy reader on notes for select to ${role} using (true);
       grant usage on schema ${schema} to ${role};
       grant select (user_id, org_id) on memberships to ${role};
       grant select (id, org_id) on projects to ${role};
       grant select (id, org_id) on tickets to ${role};
+      grant select (id, project_id) on comments to ${role};
       -- As on Supabase: RLS on, with a select policy for the read-only role.
       alter table memberships enable row level security;
       alter table projects enable row level security;
       alter table tickets enable row level security;
+      alter table comments enable row level security;
       create policy reader on memberships for select to ${role} using (true);
       create policy reader on projects for select to ${role} using (true);
       create policy reader on tickets for select to ${role} using (true);
+      create policy reader on comments for select to ${role} using (true);
       alter role ${role} set search_path = ${schema};
     `);
     const url = new URL(adminUrl as string);
@@ -167,6 +181,74 @@ describe.skipIf(!adminUrl)("createPgDirectory against Postgres", () => {
       "7",
     ]);
     expect(Object.fromEntries(big)).toEqual({ "7": ORG_B });
+  });
+
+  it("maps and counts tenantVia rows through the row they reference", async () => {
+    const rows = await directory.tenantsOfRows("comments", [
+      "1",
+      "2",
+      "4",
+      "9",
+    ]);
+    expect(Object.fromEntries(rows)).toEqual({ "1": ORG_A, "2": ORG_B });
+    const counts = await directory.rowCounts("comments", [
+      ORG_A.toUpperCase(),
+      ORG_B,
+      "00000000-0000-4000-8000-0000000000ff",
+    ]);
+    expect(Object.fromEntries(counts)).toEqual({
+      [ORG_A.toUpperCase()]: 1,
+      [ORG_B]: 2,
+      "00000000-0000-4000-8000-0000000000ff": 0,
+    });
+  });
+
+  it("joins a tenantVia column whose type differs from the id it references", async () => {
+    const rows = await directory.tenantsOfRows("notes", ["1"]);
+    expect(Object.fromEntries(rows)).toEqual({ "1": ORG_B });
+    const counts = await directory.rowCounts("notes", [ORG_A, ORG_B]);
+    expect(Object.fromEntries(counts)).toEqual({ [ORG_A]: 0, [ORG_B]: 1 });
+  });
+
+  it("runs both checks end to end on a tenantVia table", async () => {
+    const logRows = [
+      // USER_1 (org A) reads comments on org B's project: crossed.
+      logRow(
+        1,
+        USER_1,
+        "/rest/v1/comments",
+        `?project_id=eq.${PROJECT_B}`,
+        "0-0/*",
+      ),
+      // USER_1 reads comment 2 (org B) by id and gets nothing: attempt.
+      logRow(2, USER_1, "/rest/v1/comments", "?id=eq.2", "*/*"),
+      // USER_1 lists comments and sees 2; org A holds 1: crossed.
+      logRow(3, USER_1, "/rest/v1/comments", "?select=id", "0-1/*"),
+      // USER_2 sees 3; orgs A and B hold 3 between them: fine.
+      logRow(4, USER_2, "/rest/v1/comments", "?select=id", "0-2/*"),
+    ];
+    const fetchFn = (async () =>
+      new Response(JSON.stringify({ result: logRows }), {
+        status: 200,
+      })) as unknown as typeof fetch;
+
+    const summary = await runChecks(
+      fetchReadLogs({
+        projectRef: config.projectRef,
+        accessToken: "token",
+        from: new Date("2026-01-01T00:00:00Z"),
+        to: new Date("2026-01-01T01:00:00Z"),
+        fetch: fetchFn,
+      }),
+      config,
+      directory,
+    );
+    expect(summary.findings.map((f) => [f.check, f.kind, f.table])).toEqual([
+      ["named-tenant", "crossed", "comments"],
+      ["named-tenant", "attempt", "comments"],
+      ["row-ceiling", "crossed", "comments"],
+    ]);
+    expect(summary.tablesWithLimitedVisibility.size).toBe(0);
   });
 
   it("runs check 1 end to end: logs API → database → findings", async () => {

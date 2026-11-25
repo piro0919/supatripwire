@@ -19,7 +19,10 @@ export {
   parseConfig,
   referencedTable,
   type TableConfig,
+  type TenantSource,
+  type TenantVia,
   tableConfig,
+  tenantSource,
 } from "./config.js";
 export { rowsReturned, visibleAtLeast } from "./content-range.js";
 export { type CoverageGap, coverageGaps, exitCode } from "./coverage.js";

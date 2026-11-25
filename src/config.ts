@@ -1,14 +1,30 @@
 import { readFile } from "node:fs/promises";
 
-/** How a table relates to tenants. */
+/**
+ * A table with no tenant column of its own, whose rows belong to the tenant of
+ * the row they reference: `{ "column": "post_id", "table": "posts" }`.
+ */
+export type TenantVia = {
+  /** Column on this table holding the id of a row in `table`. */
+  column: string;
+  /** A configured table with its own `tenantColumn`. */
+  table: string;
+};
+
+/** How a table relates to tenants: `tenantColumn` or `tenantVia`, never both. */
 export type TableConfig = {
-  /** Column holding the tenant id. On the tenants table itself, this is its primary key. */
-  tenantColumn: string;
   /** Primary key column. Defaults to `id`. */
   idColumn?: string;
   /** Columns holding the id of a row in another configured table, e.g. `{ "resident_id": "residents" }`. */
   references?: Record<string, string>;
-};
+} & (
+  | {
+      /** Column holding the tenant id. On the tenants table itself, this is its primary key. */
+      tenantColumn: string;
+      tenantVia?: undefined;
+    }
+  | { tenantVia: TenantVia; tenantColumn?: undefined }
+);
 
 export type Config = {
   /** The 20-letter project ref. */
@@ -41,13 +57,48 @@ export function tableConfig(
   return Object.hasOwn(config.tables, name) ? config.tables[name] : undefined;
 }
 
-/** The table a referencing column points at, own keys only. */
+/**
+ * The table a referencing column points at, own keys only. The `tenantVia`
+ * column counts as a reference too.
+ */
 export function referencedTable(
   table: TableConfig,
   column: string,
 ): string | undefined {
+  if (table.tenantVia?.column === column) return table.tenantVia.table;
   const refs = table.references;
   return refs && Object.hasOwn(refs, column) ? refs[column] : undefined;
+}
+
+export type TenantSource = {
+  /** The table holding the tenant column. */
+  table: string;
+  column: string;
+  /** For a tenantVia table: its referencing column and the target's id column. */
+  via?: { column: string; idColumn: string };
+};
+
+/**
+ * Where the tenant of a configured table's rows is read: the table and
+ * column holding it, and — for a `tenantVia` table — how to join to it.
+ * Undefined when the config is inconsistent (a hand-built one, as
+ * `parseConfig` rejects these).
+ */
+export function tenantSource(
+  config: Config,
+  name: string,
+): TenantSource | undefined {
+  const t = tableConfig(config, name);
+  if (!t) return undefined;
+  if (t.tenantColumn !== undefined)
+    return { table: name, column: t.tenantColumn };
+  const target = tableConfig(config, t.tenantVia.table);
+  if (target?.tenantColumn === undefined) return undefined;
+  return {
+    table: t.tenantVia.table,
+    column: target.tenantColumn,
+    via: { column: t.tenantVia.column, idColumn: target.idColumn ?? "id" },
+  };
 }
 
 export class ConfigError extends Error {
@@ -98,9 +149,30 @@ export function parseConfig(json: unknown): Config {
   for (const [name, value] of Object.entries(rawTables)) {
     identifier(name, `tables key "${name}"`);
     const t = object(value, `tables.${name}`);
-    const table: TableConfig = {
-      tenantColumn: identifier(t.tenantColumn, `tables.${name}.tenantColumn`),
-    };
+    if (t.tenantColumn === undefined && t.tenantVia === undefined) {
+      throw new ConfigError(
+        `tables.${name} needs tenantColumn, or tenantVia for a table with no tenant column`,
+      );
+    }
+    if (t.tenantColumn !== undefined && t.tenantVia !== undefined) {
+      throw new ConfigError(
+        `tables.${name} has both tenantColumn and tenantVia; use one`,
+      );
+    }
+    let table: TableConfig;
+    if (t.tenantColumn !== undefined) {
+      table = {
+        tenantColumn: identifier(t.tenantColumn, `tables.${name}.tenantColumn`),
+      };
+    } else {
+      const via = object(t.tenantVia, `tables.${name}.tenantVia`);
+      table = {
+        tenantVia: {
+          column: identifier(via.column, `tables.${name}.tenantVia.column`),
+          table: string(via.table, `tables.${name}.tenantVia.table`),
+        },
+      };
+    }
     if (t.idColumn !== undefined)
       table.idColumn = identifier(t.idColumn, `tables.${name}.idColumn`);
     if (t.references !== undefined) {
@@ -124,6 +196,26 @@ export function parseConfig(json: unknown): Config {
       if (!Object.hasOwn(tables, target)) {
         throw new ConfigError(
           `tables.${name}.references.${column} points at "${target}", which is not in tables`,
+        );
+      }
+    }
+    const via = table.tenantVia;
+    if (via) {
+      if (!Object.hasOwn(tables, via.table)) {
+        throw new ConfigError(
+          `tables.${name}.tenantVia.table is "${via.table}", which is not in tables`,
+        );
+      }
+      const listed = table.references?.[via.column];
+      if (listed !== undefined && listed !== via.table) {
+        throw new ConfigError(
+          `tables.${name}.references.${via.column} points at "${listed}", but tenantVia says "${via.table}"`,
+        );
+      }
+      // One hop only: the count for check 2 is a single join.
+      if (tables[via.table]?.tenantColumn === undefined) {
+        throw new ConfigError(
+          `tables.${name}.tenantVia.table is "${via.table}", which has no tenantColumn of its own; point at the table that holds the tenant`,
         );
       }
     }

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Config: `tenantVia` maps a table with no tenant column of its own to the tenant of
+  a row it references (`{ "column": "task_id", "table": "tasks" }`), one hop. Check 1
+  resolves ids through that row; check 2 counts rows with a join, and holds back when
+  the role may not see every row of either table. In the exported `TableConfig` type,
+  `tenantColumn` is now absent on such tables.
 - `supatripwire doctor` checks the setup: the role (not a superuser), the configured
   tables and columns, whether RLS lets the role see every row, and the logs API. It
   says what it cannot check: whether the config matches the app.
