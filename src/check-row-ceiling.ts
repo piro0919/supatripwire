@@ -1,4 +1,4 @@
-import type { Config } from "./config.js";
+import { type Config, tableConfig } from "./config.js";
 import { rowsReturned, visibleAtLeast } from "./content-range.js";
 import type { RowCeilingFinding } from "./findings.js";
 import type { ReadLogEntry } from "./logs.js";
@@ -48,6 +48,6 @@ export function evaluateRowCeiling(
     visibleAtLeast: visible,
     ceiling,
     memberTenants: [...mine].sort(),
-    search: redactSearch(entry.search, config.tables[entry.table]),
+    search: redactSearch(entry.search, tableConfig(config, entry.table)),
   };
 }

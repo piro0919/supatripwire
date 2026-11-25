@@ -1,4 +1,4 @@
-import type { Config } from "./config.js";
+import { type Config, referencedTable, tableConfig } from "./config.js";
 import { rowsReturned } from "./content-range.js";
 import type { FindingKind, NamedTenantFinding } from "./findings.js";
 import type { ReadLogEntry } from "./logs.js";
@@ -20,11 +20,11 @@ export function lookupTableFor(
   table: string,
   column: string,
 ): FilterTarget | null {
-  const t = config.tables[table];
+  const t = tableConfig(config, table);
   if (!t) return null;
   if (column === t.tenantColumn) return { kind: "tenant" };
   if (column === (t.idColumn ?? "id")) return { kind: "row", table };
-  const referenced = t.references?.[column];
+  const referenced = referencedTable(t, column);
   return referenced ? { kind: "row", table: referenced } : null;
 }
 
@@ -98,6 +98,6 @@ export function evaluateNamedTenant(
     rows,
     foreignTenants: [...foreign].sort(),
     memberTenants: [...mine].sort(),
-    search: redactSearch(entry.search, config.tables[entry.table]),
+    search: redactSearch(entry.search, tableConfig(config, entry.table)),
   };
 }

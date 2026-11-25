@@ -9,7 +9,9 @@ export {
   ConfigError,
   loadConfig,
   parseConfig,
+  referencedTable,
   type TableConfig,
+  tableConfig,
 } from "./config.js";
 export { rowsReturned, visibleAtLeast } from "./content-range.js";
 export { type CoverageGap, coverageGaps, exitCode } from "./coverage.js";

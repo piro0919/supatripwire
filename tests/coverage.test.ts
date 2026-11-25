@@ -163,6 +163,55 @@ describe("coverage", () => {
     expect(coverageGaps(summary)).toEqual(["empty-ceiling"]);
   });
 
+  it("counts reads on ignored tables apart, not as a gap", async () => {
+    const withIgnore = parseConfig({
+      projectRef: "abcdefghijklmnopqrst",
+      membership: {
+        table: "memberships",
+        userColumn: "user_id",
+        tenantColumn: "org_id",
+      },
+      tables: { projects: { tenantColumn: "org_id" } },
+      ignore: ["countries", "rpc"],
+    });
+    const summary = await runChecks(
+      [
+        read({ table: "countries" }),
+        read({ table: "countries" }),
+        read({ table: "rpc" }),
+        read({}),
+      ],
+      withIgnore,
+      directory,
+    );
+    expect(summary.readsOnIgnoredTables).toBe(3);
+    expect(summary.readsOnUnmappedTables).toBe(0);
+    expect(coverageGaps(summary)).toEqual([]);
+    expect(exitCode(summary, true)).toBe(0);
+    const text = formatText(summary, range);
+    expect(text).toContain("fully checked: 1");
+    expect(text).toContain(
+      "on tables the config ignores: 3 (countries 2, rpc 1)",
+    );
+  });
+
+  it("does not crash on a path named after an Object property", async () => {
+    const summary = await runChecks(
+      [
+        read({
+          table: "constructor",
+          search: "?id=eq.1",
+          contentRange: "0-9/*",
+        }),
+        read({ table: "__proto__", search: "?id=eq.1", contentRange: "0-9/*" }),
+      ],
+      config,
+      directory,
+    );
+    expect(summary.readsOnUnmappedTables).toBe(2);
+    expect(summary.findings).toEqual([]);
+  });
+
   it("exits 1 on crossed data even with gaps and strict", async () => {
     const summary = await runChecks(
       [read({ contentRange: "0-9/*" }), read({ table: "invoices" })],

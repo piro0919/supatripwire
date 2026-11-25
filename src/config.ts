@@ -21,7 +21,34 @@ export type Config = {
   };
   /** Tables exposed through PostgREST, keyed by the name in the request path. */
   tables: Record<string, TableConfig>;
+  /**
+   * Names in the request path that are deliberately not checked — tables every
+   * tenant may read, or `rpc` for all functions. Reads on them are counted on
+   * their own and are not a coverage gap.
+   */
+  ignore?: string[];
 };
+
+/**
+ * The config for a name taken from a request path, or undefined. Only own
+ * keys count, so `constructor` or `__proto__` never resolve to something
+ * inherited — also for configs built by hand rather than by `parseConfig`.
+ */
+export function tableConfig(
+  config: Config,
+  name: string,
+): TableConfig | undefined {
+  return Object.hasOwn(config.tables, name) ? config.tables[name] : undefined;
+}
+
+/** The table a referencing column points at, own keys only. */
+export function referencedTable(
+  table: TableConfig,
+  column: string,
+): string | undefined {
+  const refs = table.references;
+  return refs && Object.hasOwn(refs, column) ? refs[column] : undefined;
+}
 
 export class ConfigError extends Error {
   override name = "ConfigError";
@@ -64,7 +91,10 @@ export function parseConfig(json: unknown): Config {
   };
 
   const rawTables = object(root.tables, "tables");
-  const tables: Record<string, TableConfig> = {};
+  // Looked up by names taken from request paths, which anyone signed in can
+  // choose. Without a prototype, `/rest/v1/constructor` finds nothing instead
+  // of Object's own `constructor`.
+  const tables: Record<string, TableConfig> = Object.create(null);
   for (const [name, value] of Object.entries(rawTables)) {
     identifier(name, `tables key "${name}"`);
     const t = object(value, `tables.${name}`);
@@ -75,7 +105,7 @@ export function parseConfig(json: unknown): Config {
       table.idColumn = identifier(t.idColumn, `tables.${name}.idColumn`);
     if (t.references !== undefined) {
       const refs = object(t.references, `tables.${name}.references`);
-      table.references = {};
+      table.references = Object.create(null) as Record<string, string>;
       for (const [column, target] of Object.entries(refs)) {
         identifier(column, `tables.${name}.references key "${column}"`);
         table.references[column] = string(
@@ -91,7 +121,7 @@ export function parseConfig(json: unknown): Config {
 
   for (const [name, table] of Object.entries(tables)) {
     for (const [column, target] of Object.entries(table.references ?? {})) {
-      if (!tables[target]) {
+      if (!Object.hasOwn(tables, target)) {
         throw new ConfigError(
           `tables.${name}.references.${column} points at "${target}", which is not in tables`,
         );
@@ -99,7 +129,23 @@ export function parseConfig(json: unknown): Config {
     }
   }
 
-  return { projectRef, membership, tables };
+  const ignore: string[] = [];
+  if (root.ignore !== undefined) {
+    if (!Array.isArray(root.ignore))
+      throw new ConfigError("ignore must be an array of names");
+    for (const [i, name] of root.ignore.entries()) {
+      // Compared with the request path only, never put into SQL.
+      const value = string(name, `ignore[${i}]`);
+      if (Object.hasOwn(tables, value)) {
+        throw new ConfigError(
+          `ignore[${i}] is "${value}", which is also in tables; list it in one of them`,
+        );
+      }
+      ignore.push(value);
+    }
+  }
+
+  return { projectRef, membership, tables, ignore };
 }
 
 function object(value: unknown, path: string): Record<string, unknown> {

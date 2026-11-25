@@ -1,6 +1,6 @@
 import { evaluateNamedTenant } from "./check-named-tenant.js";
 import { evaluateRowCeiling } from "./check-row-ceiling.js";
-import type { Config } from "./config.js";
+import { type Config, tableConfig } from "./config.js";
 import { rowsReturned } from "./content-range.js";
 import type { TenantDirectory } from "./directory.js";
 import type { CheckSummary } from "./findings.js";
@@ -26,6 +26,8 @@ export async function runChecks(
 ): Promise<CheckSummary> {
   const batchSize = options.batchSize ?? DEFAULT_BATCH_SIZE;
   const lookups = new Lookups(config, directory);
+  // A hand-built config may leave `ignore` out.
+  const ignored = new Set(config.ignore ?? []);
   const summary: CheckSummary = {
     findings: [],
     readsScanned: 0,
@@ -33,6 +35,8 @@ export async function runChecks(
     lastReadAt: null,
     readsWithoutRowCount: 0,
     tablesWithoutRowCount: new Map(),
+    readsOnIgnoredTables: 0,
+    ignoredTables: new Map(),
     readsOnUnmappedTables: 0,
     unmappedTables: new Map(),
     usersWithoutMembership: new Set(),
@@ -67,7 +71,12 @@ export async function runChecks(
       summary.firstReadAt = entry.timestamp;
     if (summary.lastReadAt === null || entry.timestamp > summary.lastReadAt)
       summary.lastReadAt = entry.timestamp;
-    if (!config.tables[entry.table]) {
+    if (ignored.has(entry.table)) {
+      summary.readsOnIgnoredTables++;
+      increment(summary.ignoredTables, entry.table);
+      continue;
+    }
+    if (!tableConfig(config, entry.table)) {
       summary.readsOnUnmappedTables++;
       increment(summary.unmappedTables, entry.table);
       continue;

@@ -65,6 +65,10 @@ export type CheckSummary = {
   readsWithoutRowCount: number;
   /** Configured tables with such reads, with how many each had. */
   tablesWithoutRowCount: Map<string, number>;
+  /** Reads on names the config's `ignore` lists. Not checked, by choice. */
+  readsOnIgnoredTables: number;
+  /** Ignored names with how many reads each had. */
+  ignoredTables: Map<string, number>;
   /** Reads on a table the config does not list. */
   readsOnUnmappedTables: number;
   /** Unmapped table names with how many reads each had. */

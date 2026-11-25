@@ -1,5 +1,5 @@
 import pg from "pg";
-import type { Config } from "./config.js";
+import { type Config, tableConfig } from "./config.js";
 
 /**
  * The few id-to-tenant facts the checks need. Backed by the read-only role in
@@ -134,7 +134,7 @@ export function createPgDirectory(
 
     async tenantsOfRows(table, ids) {
       const result = new Map<string, string>();
-      const t = config.tables[table];
+      const t = tableConfig(config, table);
       if (!t || ids.length === 0) return result;
       const idColumn = t.idColumn ?? "id";
       for (const row of await lookup(table, idColumn, t.tenantColumn, ids)) {
@@ -176,7 +176,7 @@ export function createPgDirectory(
 
     async rowCounts(table, tenants) {
       const result = new Map<string, number>(tenants.map((t) => [t, 0]));
-      const t = config.tables[table];
+      const t = tableConfig(config, table);
       if (!t || tenants.length === 0) return result;
       const tq = quoteIdent(table);
       const c = quoteIdent(t.tenantColumn);

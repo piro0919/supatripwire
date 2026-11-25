@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Config: `ignore` lists names in the request path that are deliberately not checked,
+  such as a shared lookup table or `rpc`. Reads on them are counted apart and are not
+  a coverage gap.
+- A read on a path named after an Object property (`/rest/v1/constructor?id=eq.1`) no
+  longer crashes the run. Such names were found on the config's prototype.
 - The report shows what was checked: when the first and last reads were found, how
   many were fully checked, and how many reads that did not fail had no row count. It ends
   with the coverage gaps found, also listed in the JSON as `coverageGaps`.

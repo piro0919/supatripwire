@@ -62,6 +62,7 @@ leaked. The report says how many that was:
 - **Fully checked** — reads on configured tables with a row count, or that failed
   (4xx/5xx) and so returned nothing.
 - **On tables missing from the config** — not checked at all.
+- **On tables the config ignores** — not checked, by your choice.
 - **Without a row count** — reads that did not fail but whose `content_range` was
   missing or unreadable. Check 2 cannot judge them, and check 1 cannot call them
   crossed.
@@ -130,7 +131,8 @@ infer your authorization rules.
       "tenantColumn": "org_id",
       "references": { "project_id": "projects" }
     }
-  }
+  },
+  "ignore": ["countries", "rpc"]
 }
 ```
 
@@ -141,8 +143,13 @@ infer your authorization rules.
 - `references` — columns holding the id of a row in another listed table. A filter on
   such a column is resolved through that table.
 
+- `ignore` — optional. Names in the request path you deliberately leave unchecked:
+  tables every tenant may read, or `rpc` for every function under `/rest/v1/rpc/`.
+
 Reads on tables missing from the config are counted and listed in the report, not
-checked.
+checked, and are a coverage gap. Reads on names in `ignore` are counted on their own
+and are not a gap, so `--strict` does not fail on a lookup table every tenant shares.
+Anything you put there is no longer watched: list only names that hold no tenant data.
 
 ## Usage
 

@@ -42,6 +42,7 @@ export function formatText(
   if (summary.readsScanned > 0) {
     const checked =
       summary.readsScanned -
+      summary.readsOnIgnoredTables -
       summary.readsOnUnmappedTables -
       summary.readsWithoutRowCount;
     lines.push(`  fully checked: ${checked}`);
@@ -49,6 +50,9 @@ export function formatText(
       `  on tables missing from the config: ${summary.readsOnUnmappedTables}`,
     );
     lines.push(`  without a row count: ${summary.readsWithoutRowCount}`);
+    lines.push(
+      `  on tables the config ignores: ${summary.readsOnIgnoredTables}${formatCounts(summary.ignoredTables)}`,
+    );
   }
 
   const sorted = [...summary.findings].sort(
@@ -123,6 +127,13 @@ export function formatText(
   return `${lines.join("\n")}\n`;
 }
 
+/** ` (countries 12, rpc 3)`, most reads first; empty for no entries. */
+function formatCounts(counts: Map<string, number>): string {
+  if (counts.size === 0) return "";
+  const sorted = [...counts].sort((a, b) => b[1] - a[1]);
+  return ` (${sorted.map(([name, n]) => `${name} ${n}`).join(", ")})`;
+}
+
 const CHECK_LABELS = {
   "named-tenant": "named another tenant",
   "row-ceiling": "more rows than their tenants hold",
@@ -156,6 +167,8 @@ export function formatJson(
       coverageGaps: coverageGaps(summary),
       readsWithoutRowCount: summary.readsWithoutRowCount,
       tablesWithoutRowCount: Object.fromEntries(summary.tablesWithoutRowCount),
+      readsOnIgnoredTables: summary.readsOnIgnoredTables,
+      ignoredTables: Object.fromEntries(summary.ignoredTables),
       readsOnUnmappedTables: summary.readsOnUnmappedTables,
       unmappedTables: Object.fromEntries(summary.unmappedTables),
       usersWithoutMembership: [...summary.usersWithoutMembership].sort(),
