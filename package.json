@@ -1,6 +1,6 @@
 {
   "name": "supatripwire",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Detect cross-tenant reads in a Supabase project from its API gateway logs",
   "type": "module",
   "sideEffects": false,

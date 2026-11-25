@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.1.0 - 2026-11-26
 
 - Config: `"rowCeiling": false` on a table turns check 2 off for it, for tables whose
   RLS lets every tenant read some rows (a null tenant), which check 2 reported as
