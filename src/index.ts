@@ -1,7 +1,9 @@
 export {
+  type FullAccessReason,
   inspectAccess,
   type TableAccess,
   tablesToInspect,
+  VISIBILITY_TEXT,
   type Visibility,
 } from "./access.js";
 export {

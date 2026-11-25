@@ -1,15 +1,8 @@
+import { VISIBILITY_TEXT } from "./access.js";
 import { coverageGaps } from "./coverage.js";
 import type { CheckSummary, Finding } from "./findings.js";
 
 const DAY_MS = 86_400_000;
-
-const VISIBILITY_NOTES = {
-  all: "every row",
-  none: "no rows — RLS is on and no SELECT policy applies to the role",
-  partial:
-    "maybe only some rows — no plain `using (true)` policy, or a restrictive one",
-  missing: "not found — wrong name, or no USAGE on its schema",
-} as const;
 
 const ORDER = { crossed: 0, unconfirmed: 1, attempt: 2 } as const;
 
@@ -133,7 +126,12 @@ export function formatText(
       a[0].localeCompare(b[0]),
     );
     for (const [table, visibility] of tables) {
-      lines.push(`  ${table}: ${VISIBILITY_NOTES[visibility]}`);
+      lines.push(`  ${table}: ${VISIBILITY_TEXT[visibility]}`);
+    }
+    if (summary.crossedHeldBack > 0) {
+      lines.push(
+        `  ${summary.crossedHeldBack} findings would be "data crossed" but are held back; the run exits with 3.`,
+      );
     }
     lines.push(
       "  Findings that depend on them are not reported as crossed. Give the role a",
@@ -203,6 +201,7 @@ export function formatJson(
       tablesWithLimitedVisibility: Object.fromEntries(
         summary.tablesWithLimitedVisibility,
       ),
+      crossedHeldBack: summary.crossedHeldBack,
       findings: summary.findings,
     },
     null,

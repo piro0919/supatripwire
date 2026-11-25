@@ -5,22 +5,47 @@ import { type Config, tableConfig } from "./config.js";
  * Which rows of a table the read-only role can see, as far as Postgres's
  * catalog says.
  *
- * - `all` — RLS is off, the role owns the table or bypasses RLS, or a
- *   permissive `using (true)` policy applies and no restrictive one narrows it.
- * - `none` — RLS is on and no permissive SELECT policy applies to the role.
+ * - `all` — RLS is off, the role is exempt (superuser, BYPASSRLS, or holding
+ *   the owner's privileges without FORCE), or a permissive `using (true)`
+ *   policy applies and no restrictive one narrows it.
+ * - `none` — RLS is on and no permissive SELECT policy with a USING clause
+ *   applies to the role.
  * - `partial` — policies apply, but none of them is plainly `true`, or a
  *   restrictive one narrows them. The role may see only some rows.
  * - `missing` — the table does not resolve (wrong name or no USAGE on its schema).
+ * - `unknown` — the catalog could not be read.
  */
-export type Visibility = "all" | "none" | "partial" | "missing";
+export type Visibility = "all" | "none" | "partial" | "missing" | "unknown";
+
+/** Why a table counts as `all`. */
+export type FullAccessReason =
+  | "no-rls"
+  | "superuser"
+  | "bypassrls"
+  | "owner"
+  | "policy";
 
 export type TableAccess = {
   table: string;
   visibility: Visibility;
+  /** Set when `visibility` is `all`. */
+  reason?: FullAccessReason;
   /** Columns the checks select that do not exist on the table. */
   missingColumns: string[];
   /** Columns that exist but the role may not SELECT. */
   unreadableColumns: string[];
+  /** Set when `visibility` is `unknown`. */
+  error?: string;
+};
+
+/** One wording for `check` and `doctor`. */
+export const VISIBILITY_TEXT: Record<Visibility, string> = {
+  all: "sees every row",
+  none: "sees no rows: RLS is on and no SELECT policy applies to the role",
+  partial:
+    "may see only some rows: no plain `using (true)` policy for the role, or a restrictive policy narrows it",
+  missing: "not found: wrong name, or the role has no USAGE on its schema",
+  unknown: "unknown: the catalog could not be read",
 };
 
 type Queryable = Pick<pg.Pool, "query">;
@@ -52,7 +77,8 @@ export function tablesToInspect(
 
 /**
  * Reads what the connected role can see of each table from the catalog. Only
- * catalog tables are read, never the tables' rows.
+ * catalog tables are read, never the tables' rows. A table whose catalog
+ * entries cannot be read comes back `unknown` instead of failing the run.
  */
 export async function inspectAccess(
   db: Queryable,
@@ -60,7 +86,17 @@ export async function inspectAccess(
 ): Promise<TableAccess[]> {
   const result: TableAccess[] = [];
   for (const { table, columns } of tablesToInspect(config)) {
-    result.push(await inspectTable(db, table, columns));
+    try {
+      result.push(await inspectTable(db, table, columns));
+    } catch (error) {
+      result.push({
+        table,
+        visibility: "unknown",
+        missingColumns: [],
+        unreadableColumns: [],
+        error: (error as Error).message,
+      });
+    }
   }
   return result;
 }
@@ -71,16 +107,21 @@ async function inspectTable(
   columns: string[],
 ): Promise<TableAccess> {
   const name = quoteIdent(table);
+  // RLS follows privileges, not bare membership: a NOINHERIT member of the
+  // owner role is still filtered, so 'USAGE' rather than 'MEMBER'.
   const rel = await db.query<{
     rls: boolean;
     force: boolean;
     owner: boolean;
+    superuser: boolean;
     bypass: boolean;
   }>(
     `select c.relrowsecurity as rls, c.relforcerowsecurity as force,
-            pg_has_role(c.relowner, 'MEMBER') as owner,
-            coalesce((select rolbypassrls from pg_roles where rolname = current_user), false) as bypass
+            pg_has_role(c.relowner, 'USAGE') as owner,
+            coalesce(r.rolsuper, false) as superuser,
+            coalesce(r.rolbypassrls, false) as bypass
        from pg_class c
+       left join pg_roles r on r.rolname = current_user
       where c.oid = to_regclass($1)`,
     [name],
   );
@@ -102,41 +143,40 @@ async function inspectTable(
     [name, columns],
   );
   const found = new Map(cols.rows.map((c) => [c.name, c.readable]));
-  const missingColumns = columns.filter((c) => !found.has(c));
-  const unreadableColumns = columns.filter((c) => found.get(c) === false);
+  const base = {
+    table,
+    missingColumns: columns.filter((c) => !found.has(c)),
+    unreadableColumns: columns.filter((c) => found.get(c) === false),
+  };
 
-  let visibility: Visibility;
-  if (!r.rls || r.bypass || (r.owner && !r.force)) {
-    visibility = "all";
-  } else {
-    // Policies for SELECT (or ALL) that apply to this role: to PUBLIC (oid 0)
-    // or to any role it is a member of.
-    const policies = await db.query<{
-      permissive: boolean;
-      qual: string | null;
-    }>(
-      `select p.polpermissive as permissive, pg_get_expr(p.polqual, p.polrelid) as qual
-         from pg_policy p
-        where p.polrelid = to_regclass($1)
-          and p.polcmd in ('r', '*')
-          and exists (
-            select 1 from unnest(p.polroles) as pr(role)
-             where pr.role = 0 or pg_has_role(current_user, pr.role, 'MEMBER'))`,
-      [name],
-    );
-    const permissive = policies.rows.filter((p) => p.permissive);
-    const narrowing = policies.rows.filter(
-      (p) => !p.permissive && p.qual !== "true",
-    );
-    if (permissive.length === 0) visibility = "none";
-    else if (
-      narrowing.length === 0 &&
-      permissive.some((p) => p.qual === "true")
-    )
-      visibility = "all";
-    else visibility = "partial";
-  }
-  return { table, visibility, missingColumns, unreadableColumns };
+  if (!r.rls) return { ...base, visibility: "all", reason: "no-rls" };
+  if (r.superuser) return { ...base, visibility: "all", reason: "superuser" };
+  if (r.bypass) return { ...base, visibility: "all", reason: "bypassrls" };
+  if (r.owner && !r.force)
+    return { ...base, visibility: "all", reason: "owner" };
+
+  // Policies for SELECT (or ALL) that apply to this role: to PUBLIC (oid 0) or
+  // to a role whose privileges it holds. A policy without USING (only WITH
+  // CHECK) does not take part in reads.
+  const policies = await db.query<{ permissive: boolean; qual: string }>(
+    `select p.polpermissive as permissive, pg_get_expr(p.polqual, p.polrelid) as qual
+       from pg_policy p
+      where p.polrelid = to_regclass($1)
+        and p.polcmd in ('r', '*')
+        and p.polqual is not null
+        and exists (
+          select 1 from unnest(p.polroles) as pr(role)
+           where pr.role = 0 or pg_has_role(current_user, pr.role, 'USAGE'))`,
+    [name],
+  );
+  const permissive = policies.rows.filter((p) => p.permissive);
+  const narrowing = policies.rows.filter(
+    (p) => !p.permissive && p.qual !== "true",
+  );
+  if (permissive.length === 0) return { ...base, visibility: "none" };
+  if (narrowing.length === 0 && permissive.some((p) => p.qual === "true"))
+    return { ...base, visibility: "all", reason: "policy" };
+  return { ...base, visibility: "partial" };
 }
 
 function quoteIdent(name: string): string {

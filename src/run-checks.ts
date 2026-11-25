@@ -1,3 +1,4 @@
+import { tablesToInspect, type Visibility } from "./access.js";
 import { evaluateNamedTenant } from "./check-named-tenant.js";
 import { evaluateRowCeiling } from "./check-row-ceiling.js";
 import { type Config, tableConfig } from "./config.js";
@@ -42,18 +43,32 @@ export async function runChecks(
     usersWithoutMembership: new Set(),
     tablesWithEmptyCeiling: new Set(),
     tablesWithLimitedVisibility: new Map(),
+    crossedHeldBack: 0,
   };
 
   // Ask the catalog first: a role that cannot see every row turns certain
-  // findings into false ones.
-  for (const access of (await directory.inspectAccess?.()) ?? []) {
-    if (access.visibility !== "all") {
-      summary.tablesWithLimitedVisibility.set(access.table, access.visibility);
-    }
+  // findings into false ones. If even that fails, assume the worst.
+  const limited = new Map<string, Visibility>();
+  let accessList: Array<{ table: string; visibility: Visibility }>;
+  try {
+    accessList = (await directory.inspectAccess?.()) ?? [];
+  } catch {
+    accessList = tablesToInspect(config).map(({ table }) => ({
+      table,
+      visibility: "unknown",
+    }));
   }
-  const membershipLimited = summary.tablesWithLimitedVisibility.has(
-    config.membership.table,
-  );
+  for (const access of accessList) {
+    if (access.visibility !== "all")
+      limited.set(access.table, access.visibility);
+  }
+  const membershipVisibility = limited.get(config.membership.table);
+  if (membershipVisibility) {
+    summary.tablesWithLimitedVisibility.set(
+      config.membership.table,
+      membershipVisibility,
+    );
+  }
 
   let batch: ReadLogEntry[] = [];
   const flush = async () => {
@@ -67,11 +82,11 @@ export async function runChecks(
         if (!finding) continue;
         if (
           finding.kind === "crossed" &&
-          (membershipLimited ||
-            (finding.check === "row-ceiling" &&
-              summary.tablesWithLimitedVisibility.has(finding.table)))
+          (membershipVisibility !== undefined ||
+            (finding.check === "row-ceiling" && limited.has(finding.table)))
         ) {
           finding.kind = "unconfirmed";
+          summary.crossedHeldBack++;
         }
         summary.findings.push(finding);
         if (finding.memberTenants.length === 0) {
@@ -103,6 +118,10 @@ export async function runChecks(
       }
       continue;
     }
+    // Only tables this run read count as a gap, plus membership (above).
+    const visibility = limited.get(entry.table);
+    if (visibility)
+      summary.tablesWithLimitedVisibility.set(entry.table, visibility);
     // An error response returned no rows, so it has nothing to judge. A
     // missing status is not an error: it may have returned rows.
     const failed =

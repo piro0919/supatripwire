@@ -90,10 +90,17 @@ export type CheckSummary = {
   tablesWithEmptyCeiling: Set<string>;
   /**
    * Tables the read-only role may not see in full, by the catalog: RLS with
-   * no `using (true)` policy for the role, or a restrictive one. A partial
+   * no `using (true)` policy for the role, or a restrictive one. Only the
+   * membership table and tables this run read are listed. A partial
    * membership table makes the caller's own tenants look foreign, so no read
    * is `crossed` then; a partial data table lowers check 2's ceiling, so its
    * check 2 findings are not `crossed` either.
    */
   tablesWithLimitedVisibility: Map<string, Visibility>;
+  /**
+   * Findings that would have been `crossed` but were held back to
+   * `unconfirmed` because of limited visibility. The CLI exits 3 on these even
+   * without --strict: evidence of crossing that the setup kept from proving.
+   */
+  crossedHeldBack: number;
 };

@@ -19,6 +19,9 @@ const tables = {
   other_role: "none", // RLS on, policy for someone else
   narrowed: "partial", // using (org_id = …)
   restricted: "partial", // using (true), but a restrictive policy narrows it
+  check_only_restrictive: "all", // restrictive policy with only WITH CHECK
+  check_only_permissive: "none", // the only permissive policy has no USING
+  owned_by_reader: "all", // the reader owns it: exempt, but too broad
 } as const;
 
 const config = parseConfig({
@@ -45,6 +48,10 @@ describe.skipIf(!adminUrl)("inspectAccess against Postgres", () => {
   const role = `supatripwire_access_reader_${process.pid}`;
   const group = `supatripwire_access_group_${process.pid}`;
   const other = `supatripwire_access_other_${process.pid}`;
+  const owner = `supatripwire_access_owner_${process.pid}`;
+  const noinheritGroup = `supatripwire_access_nigroup_${process.pid}`;
+  const noinheritReader = `supatripwire_access_nireader_${process.pid}`;
+  const superuser = `supatripwire_access_super_${process.pid}`;
 
   beforeAll(async () => {
     admin = new pg.Client({ connectionString: adminUrl });
@@ -56,6 +63,14 @@ describe.skipIf(!adminUrl)("inspectAccess against Postgres", () => {
       `create role ${group}`,
       `create role ${other}`,
       `grant ${group} to ${role}`,
+      `create role ${owner}`,
+      // NOINHERIT as a role attribute works on Postgres 15 and 17 alike.
+      `create role ${noinheritGroup}`,
+      `create role ${noinheritReader} login password 'pw' noinherit`,
+      `grant ${owner}, ${noinheritGroup} to ${noinheritReader}`,
+      `grant usage on schema ${schema} to ${noinheritReader}`,
+      `alter role ${noinheritReader} set search_path = ${schema}`,
+      `create role ${superuser} login password 'pw' superuser nobypassrls`,
       `grant usage on schema ${schema} to ${role}`,
       `alter role ${role} set search_path = ${schema}`,
     ];
@@ -75,6 +90,18 @@ describe.skipIf(!adminUrl)("inspectAccess against Postgres", () => {
       `create policy p on narrowed for select to ${role} using (org_id = 1)`,
       `create policy p on restricted for select to ${role} using (true)`,
       `create policy r on restricted as restrictive for select to ${role} using (org_id < 5)`,
+      `create table noinherit_owner (id int primary key, org_id int)`,
+      `create table noinherit_policy (id int primary key, org_id int)`,
+      `alter table noinherit_owner enable row level security`,
+      `alter table noinherit_policy enable row level security`,
+      `grant select (id, org_id) on noinherit_owner, noinherit_policy to ${noinheritReader}`,
+      `alter table noinherit_owner owner to ${owner}`,
+      `create policy p on noinherit_owner for select to ${noinheritReader} using (org_id = 1)`,
+      `create policy p on noinherit_policy for select to ${noinheritGroup} using (true)`,
+      `create policy p on check_only_restrictive for select to ${role} using (true)`,
+      `create policy r on check_only_restrictive as restrictive for all to ${role} with check (org_id > 0)`,
+      `create policy p on check_only_permissive for all to ${role} with check (true)`,
+      `alter table owned_by_reader owner to ${role}`,
     );
     await admin.query(ddl.join(";\n"));
     const url = new URL(adminUrl as string);
@@ -87,7 +114,7 @@ describe.skipIf(!adminUrl)("inspectAccess against Postgres", () => {
   afterAll(async () => {
     await reader?.end();
     await admin?.query(
-      `drop schema if exists ${schema} cascade; drop role if exists ${role}; drop role if exists ${group}; drop role if exists ${other};`,
+      `drop schema if exists ${schema} cascade; ${[role, group, other, owner, noinheritGroup, noinheritReader, superuser].map((r) => `drop role if exists ${r};`).join(" ")}`,
     );
     await admin?.end();
   });
@@ -102,6 +129,49 @@ describe.skipIf(!adminUrl)("inspectAccess against Postgres", () => {
       no_such_table: "missing",
       hidden_column: "all",
     });
+  });
+
+  /** Inspects `tables` while connected as `user`. */
+  async function inspectAs(user: string, tables: string[]) {
+    const url = new URL(adminUrl as string);
+    url.username = user;
+    url.password = "pw";
+    const client = new pg.Client({ connectionString: url.toString() });
+    await client.connect();
+    try {
+      await client.query(`set search_path = ${schema}`);
+      const [first, ...rest] = tables as [string, ...string[]];
+      const only = parseConfig({
+        ...config,
+        membership: { table: first, userColumn: "id", tenantColumn: "org_id" },
+        tables: Object.fromEntries(
+          [first, ...rest].map((t) => [t, { tenantColumn: "org_id" }]),
+        ),
+      });
+      const access = await inspectAccess(client, only);
+      return Object.fromEntries(access.map((a) => [a.table, a]));
+    } finally {
+      await client.end();
+    }
+  }
+
+  it("treats a superuser as seeing every row even without BYPASSRLS", async () => {
+    const access = await inspectAs(superuser, ["narrowed"]);
+    expect(access.narrowed).toMatchObject({
+      visibility: "all",
+      reason: "superuser",
+    });
+  });
+
+  it("does not count roles held without INHERIT, as RLS does not", async () => {
+    const access = await inspectAs(noinheritReader, [
+      "noinherit_owner",
+      "noinherit_policy",
+    ]);
+    // A NOINHERIT member of the owner role is not exempt; its own policy narrows it.
+    expect(access.noinherit_owner?.visibility).toBe("partial");
+    // A policy for a role it holds without INHERIT does not apply to it.
+    expect(access.noinherit_policy?.visibility).toBe("none");
   });
 
   it("names columns that are missing or not readable", async () => {
@@ -127,6 +197,8 @@ describe.skipIf(!adminUrl)("inspectAccess against Postgres", () => {
     expect(text).toContain("✗ no_policy: sees no rows");
     expect(text).toContain("✗ no_such_table: not found");
     expect(text).toContain("no SELECT on column org_id");
+    expect(text).toContain("✗ owned_by_reader: sees every row");
+    expect(text).toContain("holds the table owner's privileges");
     expect(text).toContain("Logs API: ✗ SUPABASE_ACCESS_TOKEN is not set");
     expect(text).toContain("Not checked: whether the config matches your app");
   });

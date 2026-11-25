@@ -1,5 +1,10 @@
 import pg from "pg";
-import { inspectAccess, type TableAccess } from "./access.js";
+import {
+  type FullAccessReason,
+  inspectAccess,
+  type TableAccess,
+  VISIBILITY_TEXT,
+} from "./access.js";
 import type { Config } from "./config.js";
 import { fetchReadLogs } from "./logs.js";
 
@@ -21,13 +26,16 @@ export type DoctorOptions = {
   now?: Date;
 };
 
-const VISIBILITY = {
-  all: "sees every row",
-  none: "sees no rows: RLS is on and no SELECT policy applies to the role",
-  partial:
-    "may see only some rows: no plain `using (true)` policy for the role, or a restrictive policy narrows it",
-  missing: "not found: wrong name, or the role has no USAGE on its schema",
-} as const;
+/**
+ * Full access that comes from the role rather than a policy also lets it read
+ * every column, against the column-granted role the README asks for.
+ */
+const BROAD_ROLE: Partial<Record<FullAccessReason, string>> = {
+  owner:
+    "the role holds the table owner's privileges, so column grants do not limit it",
+  bypassrls:
+    "the role has BYPASSRLS; drop it and give a `using (true)` policy instead",
+};
 
 /**
  * Checks the setup the way `check` will use it: the read-only role, the
@@ -60,13 +68,16 @@ export async function runDoctor(options: DoctorOptions): Promise<DoctorResult> {
     }
     const access = await inspectAccess(pool, options.config);
     for (const table of access) {
-      const columns = columnProblems(table);
-      const good = table.visibility === "all" && columns.length === 0;
+      const problems = columnProblems(table);
+      const broad = table.reason ? BROAD_ROLE[table.reason] : undefined;
+      if (broad) problems.push(broad);
+      if (table.error) problems.push(table.error);
+      const good = table.visibility === "all" && problems.length === 0;
       if (!good) ok = false;
       lines.push(
-        `  ${good ? "✓" : "✗"} ${table.table}: ${VISIBILITY[table.visibility]}`,
+        `  ${good ? "✓" : "✗"} ${table.table}: ${VISIBILITY_TEXT[table.visibility]}`,
       );
-      for (const p of columns) lines.push(`      ${p}`);
+      for (const p of problems) lines.push(`      ${p}`);
     }
   } catch (error) {
     ok = false;

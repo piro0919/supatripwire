@@ -8,7 +8,8 @@
 - `check` reads the same catalog facts first. Findings that depend on a table the role
   may not see in full are held back from "crossed", and the table is a
   `limited-visibility` coverage gap. Before, a role that saw only some rows made check
-  2 report honest reads as crossed.
+  2 report honest reads as crossed. A finding held back this way exits with status 3
+  even without `--strict`.
 - Config: `ignore` lists names in the request path that are deliberately not checked,
   such as a shared lookup table or `rpc`. Reads on them are counted apart and are not
   a coverage gap.

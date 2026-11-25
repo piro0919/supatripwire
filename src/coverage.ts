@@ -29,10 +29,13 @@ export const EXIT_COVERAGE_GAPS = 3;
 
 /**
  * The CLI's exit status for a finished run. Crossed data outranks coverage
- * gaps, and gaps fail the run only when `strict` asks for it.
+ * gaps, and gaps fail the run only when `strict` asks for it — except a
+ * finding held back from `crossed` by limited visibility, which always does.
  */
 export function exitCode(summary: CheckSummary, strict: boolean): number {
   if (summary.findings.some((f) => f.kind === "crossed")) return EXIT_CROSSED;
+  // Crossing that only the setup kept from being proven must not pass quietly.
+  if (summary.crossedHeldBack > 0) return EXIT_COVERAGE_GAPS;
   if (strict && coverageGaps(summary).length > 0) return EXIT_COVERAGE_GAPS;
   return EXIT_CLEAN;
 }

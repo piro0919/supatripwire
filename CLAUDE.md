@@ -65,12 +65,17 @@ An npm package whose main part is a **CLI that detects**, plus a small helper.
    the report names the table.
    Added 2026-11-25: a ceiling above 0 can still be too low when RLS shows the role only
    some rows. Before reading logs, `check` reads `pg_class` / `pg_policy` as the role
-   (`access.ts`): RLS off, owner, BYPASSRLS, or a permissive `using (true)` SELECT/ALL
-   policy for the role (or PUBLIC, or a role it is a member of) with no narrowing
-   restrictive one counts as seeing every row. Anything else holds back check 2 on that
-   table, and a limited membership table holds back every finding. Tested on local
-   Postgres 17; that a column-granted role can read these catalogs on hosted Supabase
-   is not yet tested.
+   (`access.ts`): RLS off, superuser, BYPASSRLS, holding the owner's privileges without
+   FORCE, or a permissive `using (true)` SELECT/ALL policy for the role (or PUBLIC, or a
+   role whose privileges it holds) with no narrowing restrictive one counts as seeing
+   every row. Privileges, not bare membership: `pg_has_role(…, 'USAGE')`, because RLS
+   does not exempt or apply through a NOINHERIT membership. Policies without USING
+   (only WITH CHECK) take no part in reads. Anything else holds back check 2 on that
+   table, and a limited membership table holds back every finding; a held-back crossed
+   exits 3 even without `--strict`, so it never passes quietly. If the catalog cannot be
+   read, every table is `unknown` and treated as limited. Tested on local Postgres 15
+   and in CI on 17; that a column-granted role can read these catalogs on hosted
+   Supabase is not yet tested.
 
 ### The helper
 

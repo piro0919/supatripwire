@@ -34,8 +34,9 @@ Environment:
   SUPABASE_ACCESS_TOKEN       Personal access token, to read the logs
   SUPATRIPWIRE_DATABASE_URL   Connection string for the read-only role
 
-Exit status: 0 when no data crossed, 1 when it did, 2 on error, and with
---strict, 3 when nothing crossed but the run has coverage gaps.
+Exit status of check: 0 when no data crossed, 1 when it did, 2 on error, and
+3 when nothing crossed but a finding was held back from "crossed" because the
+role cannot see every row — or, with --strict, the run has any coverage gap.
 `;
 
 function parseSpan(span: string): number {
@@ -101,6 +102,11 @@ async function main(argv: string[]): Promise<number> {
     return 2;
   }
   if (command === "doctor") {
+    const checkOnly = (["json", "since", "from", "to", "strict"] as const).find(
+      (flag) => values[flag],
+    );
+    if (checkOnly)
+      throw new ConfigError(`--${checkOnly} applies to check, not doctor`);
     const result = await runDoctor({
       config: await loadConfig(values.config),
       databaseUrl: requireEnv("SUPATRIPWIRE_DATABASE_URL"),

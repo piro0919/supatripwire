@@ -273,7 +273,7 @@ describe("coverage", () => {
     expect(summary.findings.map((f) => f.kind)).toEqual(["unconfirmed"]);
     expect(coverageGaps(summary)).toEqual(["limited-visibility"]);
     expect(formatText(summary, range)).toContain(
-      "projects: maybe only some rows",
+      "projects: may see only some rows",
     );
   });
 
@@ -319,6 +319,86 @@ describe("coverage", () => {
     expect(Object.fromEntries(summary.tablesWithLimitedVisibility)).toEqual({
       memberships: "none",
     });
+  });
+
+  it("exits 3 without --strict when a crossed finding was held back", async () => {
+    const partial: TenantDirectory = {
+      ...directory,
+      async inspectAccess() {
+        return [
+          {
+            table: "projects",
+            visibility: "partial",
+            missingColumns: [],
+            unreadableColumns: [],
+          },
+        ];
+      },
+    };
+    const summary = await runChecks(
+      [read({ contentRange: "0-9/*" })],
+      config,
+      partial,
+    );
+    expect(summary.crossedHeldBack).toBe(1);
+    expect(exitCode(summary, false)).toBe(3);
+    expect(formatText(summary, range)).toContain(
+      "held back; the run exits with 3",
+    );
+  });
+
+  it("treats a catalog it cannot read as unknown, and holds findings back", async () => {
+    const broken: TenantDirectory = {
+      ...directory,
+      async inspectAccess() {
+        throw new Error("permission denied for table pg_policy");
+      },
+    };
+    const summary = await runChecks(
+      [read({ contentRange: "0-9/*" })],
+      config,
+      broken,
+    );
+    expect(summary.findings.map((f) => f.kind)).toEqual(["unconfirmed"]);
+    expect(Object.fromEntries(summary.tablesWithLimitedVisibility)).toEqual({
+      memberships: "unknown",
+      projects: "unknown",
+    });
+    expect(exitCode(summary, false)).toBe(3);
+  });
+
+  it("does not call a limited table a gap when no read touched it", async () => {
+    const elsewhere: TenantDirectory = {
+      ...directory,
+      async inspectAccess() {
+        return [
+          {
+            table: "projects",
+            visibility: "none",
+            missingColumns: [],
+            unreadableColumns: [],
+          },
+        ];
+      },
+    };
+    const twoTables = parseConfig({
+      projectRef: "abcdefghijklmnopqrst",
+      membership: {
+        table: "memberships",
+        userColumn: "user_id",
+        tenantColumn: "org_id",
+      },
+      tables: {
+        projects: { tenantColumn: "org_id" },
+        tasks: { tenantColumn: "org_id" },
+      },
+    });
+    const summary = await runChecks(
+      [read({ table: "tasks" })],
+      twoTables,
+      elsewhere,
+    );
+    expect(coverageGaps(summary)).toEqual([]);
   });
 
   it("exits 1 on crossed data even with gaps and strict", async () => {

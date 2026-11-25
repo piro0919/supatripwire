@@ -48,7 +48,8 @@ email, and the report often ends up in CI logs: `?org_id=eq.…&name=ilike.***`.
 log id to see the full request in the Supabase dashboard.
 
 The command exits with status 1 when data crossed, 0 otherwise, and 2 on error, so a
-scheduled job can fail loudly.
+scheduled job can fail loudly. Status 3 is described below: a finding held back from
+"data crossed" by the role's setup, or any coverage gap with `--strict`.
 
 ### What "nothing found" covers
 
@@ -79,13 +80,15 @@ warnings above, and only cover users and tables that show up in findings) and
 exits with status 3, so a scheduled job also fails when it could not look properly.
 Crossed data still exits with 1.
 
-`limited-visibility` comes from Postgres's catalog, read before any log: a table the
-checks read where RLS may hide rows from the read-only role — no SELECT policy for
-it, or none that is plainly `using (true)`, or a restrictive policy on top. Check 2
-counts the caller's rows through that role, so a role that sees only some of them
-would turn honest reads into "data crossed". Findings that depend on such a table are
-held back to "not provably foreign"; if it is the membership table, that is every
-finding.
+`limited-visibility` comes from Postgres's catalog, read before any log: the
+membership table, or a table this run read, where RLS may hide rows from the read-only
+role — no SELECT policy for it, or none that is plainly `using (true)`, or a
+restrictive policy on top — or whose catalog entries could not be read. Check 2 counts
+the caller's rows through that role, so a role that sees only some of them would turn
+honest reads into "data crossed". Findings that depend on such a table are held back
+to "not provably foreign"; if it is the membership table, that is every finding. A
+held-back finding that would have been "data crossed" exits with status 3 even
+without `--strict`, so it cannot pass a scheduled run unnoticed.
 
 ## Setup
 
