@@ -132,7 +132,11 @@ whether the membership table is complete — and says so.
 
 Create one at [supabase.com/dashboard/account/tokens](https://supabase.com/dashboard/account/tokens).
 It is used to read the project's logs through the
-[Management API](https://supabase.com/docs/reference/api/v1-get-project-logs).
+[Management API](https://supabase.com/docs/reference/api/v1-get-project-logs), and that
+is all it needs. If your account can create
+[scoped tokens](https://supabase.com/docs/guides/platform/personal-access-tokens), limit
+it to the project and grant only **Project → Logs: Read**; everything else stays
+"No access". A classic token works too, but it can do anything your account can.
 
 ### 3. A config file
 

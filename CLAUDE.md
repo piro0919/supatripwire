@@ -82,8 +82,9 @@ An npm package whose main part is a **CLI that detects**, plus a small helper.
    table, and a limited membership table holds back every finding; a held-back crossed
    exits 3 even without `--strict`, so it never passes quietly. If the catalog cannot be
    read, every table is `unknown` and treated as limited. Tested on local Postgres 15
-   and in CI on 17; that a column-granted role can read these catalogs on hosted
-   Supabase is not yet tested.
+   and in CI on 17, and on a hosted Supabase test project on 2026-11-26: a
+   column-granted role reads these catalogs there too, and `doctor` reported every
+   table as `sees every row`.
 
 ### The helper
 
@@ -162,6 +163,11 @@ Checked against real projects, not just docs.
   marks `GET`/`POST /v1/projects/{ref}/analytics/endpoints/logs` with
   `x-oauth-scope: analytics:read`. The scopes guide above still lacks that row. Not yet
   decided whether this changes the PAT choice.
+  Update 2026-11-26: scoped personal access tokens (public alpha,
+  [docs](https://supabase.com/docs/guides/platform/personal-access-tokens)) can carry
+  only **Logs: Read**. A token with nothing else ran `doctor` and `check` end to end
+  against a hosted test project, so the README recommends that. Scoped tokens start
+  with `sbp_fc`, which the secretlint `sbp_` pattern still matches.
 - Logs are queried with ClickHouse SQL on a single `logs` table, `source = 'edge_logs'`,
   fields in `log_attributes['…']` (all strings). `logs.all` is gone (410). `select *`
   and `count(*)` are rejected; no maximum row count is documented, so the CLI pages
@@ -171,6 +177,17 @@ Checked against real projects, not just docs.
   Embedded-resource filters appear as `other.col=eq.…`.
 - `response.headers.content_range` on a 200 GET is `N-M/*` for rows, `*/*` for none,
   and `N-M/T` or `*/T` when a count was asked for.
+
+## End-to-end run on hosted Supabase (2026-11-26)
+
+A throwaway project (Tokyo, Free) with two made-up tenants, a leaking projects policy
+(`using (auth.role() = 'authenticated')`), and the README's column-granted role,
+reached through the shared pooler in session mode as `supatripwire.<ref>`. Nine reads
+by one user; `check --since 2h` scanned all nine, reported two crossed (one by check 2
+on an unfiltered read, one read caught by both checks) and three attempts, and exited 1.
+The project was deleted afterwards. A policy written as
+`org_id in (select org_id from memberships)` did **not** leak: the subquery runs under
+memberships' own RLS, so it only sees the caller's rows.
 
 ## What it cannot see — say so in the README
 
@@ -269,6 +286,7 @@ pnpm check:package
 - How the CLI is run on a schedule — for now a GitHub Actions template
   (`examples/github-actions.yml`, added 2026-11-26): hourly at :17 UTC over the last 3
   hours with `--strict`, through the shared pooler in session mode, as GitHub's runners
-  have no IPv6 and the direct connection is IPv6 without the add-on. Not yet run
-  against a hosted project. Whether to build scheduling in is still open.
+  have no IPv6 and the direct connection is IPv6 without the add-on. The CLI has run
+  against a hosted project through that pooler (from a local machine, 2026-11-26); the
+  workflow itself has not run on GitHub. Whether to build scheduling in is still open.
 - Whether this stays OSS only or later gets a hosted version.
