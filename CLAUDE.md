@@ -6,7 +6,7 @@ named a tenant the caller does not belong to — or returned more rows than the 
 possibly see. Nothing sits in the request path and no row contents are read.
 
 Status: agreed in a sounding-board session on 2026-11-25. Package skeleton, both checks
-and the helper implemented. Not published.
+and the helper implemented. 0.1.0 published to npm on 2026-11-26.
 
 ## Why this exists
 
@@ -283,6 +283,17 @@ pnpm secretlint  # secrets in the tree
 pnpm build:lib   # tsup -> dist
 pnpm check:package
 ```
+
+### Releasing
+
+- Bump `package.json`, turn `## Unreleased` in CHANGELOG into `## x.y.z - date`, commit
+  `chore: release x.y.z`, push the `vx.y.z` tag. `publish.yml` publishes through npm
+  trusted publishing (OIDC, no token, provenance attached) and skips a version already
+  on npm.
+- 0.1.0 was published by hand from a Mac on 2026-11-26: trusted publishing can only be
+  configured once the package exists. npm turned it into a staged publish, released a
+  few minutes later, which left a `0.0.0-stage` placeholder version (sibling packages
+  have one too). No `NPM_TOKEN` secret exists, on purpose.
 
 ### Landing page (`lp/`)
 

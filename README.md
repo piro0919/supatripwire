@@ -10,8 +10,7 @@ tenant the caller does not belong to, or saw more rows than the caller's tenants
 
 Nothing sits in the request path, and no row contents are read.
 
-> **Status: early.** Both checks and the request-header helper are implemented. Not yet
-> published.
+> **Status: early.** Both checks and the request-header helper are implemented.
 
 ## What it reports
 
