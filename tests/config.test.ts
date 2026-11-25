@@ -4,6 +4,8 @@ import {
   parseConfig,
   referencedTable,
   tableConfig,
+  tablesOnTenantPath,
+  tenantSource,
 } from "../src/config.js";
 
 const valid = {
@@ -99,7 +101,37 @@ describe("parseConfig", () => {
     expect(comments && referencedTable(comments, "task_id")).toBe("tasks");
   });
 
-  it("rejects tenantVia that is missing, doubled, chained or conflicting", () => {
+  it("follows a tenantVia chain to the table that holds the tenant", () => {
+    const config = parseConfig({
+      ...valid,
+      tables: {
+        ...valid.tables,
+        comments: { tenantVia: { column: "task_id", table: "tasks" } },
+        reactions: { tenantVia: { column: "comment_id", table: "comments" } },
+      },
+    });
+    expect(tenantSource(config, "reactions")).toEqual({
+      table: "tasks",
+      column: "org_id",
+      hops: [
+        {
+          from: "reactions",
+          column: "comment_id",
+          to: "comments",
+          idColumn: "id",
+        },
+        { from: "comments", column: "task_id", to: "tasks", idColumn: "id" },
+      ],
+    });
+    expect(tablesOnTenantPath(config, "reactions")).toEqual([
+      "reactions",
+      "comments",
+      "tasks",
+    ]);
+    expect(tenantSource(config, "tasks")?.hops).toEqual([]);
+  });
+
+  it("rejects tenantVia that is missing, doubled, looping or conflicting", () => {
     const withComments = (comments: unknown, extra: object = {}) =>
       parseConfig({
         ...valid,
@@ -121,9 +153,12 @@ describe("parseConfig", () => {
     expect(() =>
       withComments(
         { tenantVia: { column: "reply_to", table: "replies" } },
-        { replies: { tenantVia: { column: "task_id", table: "tasks" } } },
+        { replies: { tenantVia: { column: "comment_id", table: "comments" } } },
       ),
-    ).toThrow(/no tenantColumn of its own/);
+    ).toThrow(/leads back to a table it already passed through/);
+    expect(() =>
+      withComments({ tenantVia: { column: "parent_id", table: "comments" } }),
+    ).toThrow(/leads back/);
     expect(() =>
       withComments({
         tenantVia: { column: "task_id", table: "tasks" },

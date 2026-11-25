@@ -30,9 +30,11 @@ An npm package whose main part is a **CLI that detects**, plus a small helper.
   where membership (user → tenants) lives. This declaration is the source of truth; we do
   not try to infer the app's authorization rules. A table with no tenant column uses
   `tenantVia: { column, table }` instead of `tenantColumn` (named 2026-11-26): its rows
-  belong to the tenant of the row `column` references. One hop only — `table` must have
-  its own `tenantColumn` — so check 2 is a single join; check 2 holds back when either
-  table is not fully visible to the role. `ignore` lists path names left
+  belong to the tenant of the row `column` references. `table` may itself use
+  `tenantVia` (chains allowed 2026-11-26; first shipped as one hop); the chain must end at
+  a table with its own `tenantColumn` and must not loop. Check 1 and check 2 join along
+  the whole chain; check 2 holds back when any table on it is not fully visible to the
+  role. `ignore` lists path names left
   unchecked on purpose (shared lookup tables, `rpc` as a whole), so `--strict` does not
   fail on them; a run where every read was ignored is still the `no-reads` gap.
 - **Output** — a report of suspicious reads.

@@ -413,6 +413,45 @@ describe("coverage", () => {
     });
   });
 
+  it("holds back check 2 two hops away when the table in the middle is limited", async () => {
+    const chainConfig = parseConfig({
+      projectRef: "abcdefghijklmnopqrst",
+      membership: {
+        table: "memberships",
+        userColumn: "user_id",
+        tenantColumn: "org_id",
+      },
+      tables: {
+        projects: { tenantColumn: "org_id" },
+        comments: { tenantVia: { column: "project_id", table: "projects" } },
+        reactions: { tenantVia: { column: "comment_id", table: "comments" } },
+      },
+    });
+    const partialComments: TenantDirectory = {
+      ...directory,
+      async inspectAccess() {
+        return ["projects", "comments", "reactions"].map((table) => ({
+          table,
+          visibility: table === "comments" ? "partial" : "all",
+          missingColumns: [],
+          unreadableColumns: [],
+        }));
+      },
+    };
+    const summary = await runChecks(
+      [read({ table: "reactions", contentRange: "0-9/*" })],
+      chainConfig,
+      partialComments,
+    );
+    expect(summary.findings.map((f) => [f.check, f.kind])).toEqual([
+      ["row-ceiling", "unconfirmed"],
+    ]);
+    expect(summary.crossedHeldBack).toBe(1);
+    expect(Object.fromEntries(summary.tablesWithLimitedVisibility)).toEqual({
+      comments: "partial",
+    });
+  });
+
   it("names the table a tenantVia table counts through when its ceiling is 0", async () => {
     const viaConfig = parseConfig({
       projectRef: "abcdefghijklmnopqrst",

@@ -84,7 +84,7 @@ Crossed data still exits with 1.
 membership table, or a table this run read, where RLS may hide rows from the read-only
 role — no SELECT policy for it, or none that is plainly `using (true)`, or a
 restrictive policy on top — or whose catalog entries could not be read. For a
-`tenantVia` table, the table it reaches the tenant through counts too. Check 2 counts
+`tenantVia` table, every table it reaches the tenant through counts too. Check 2 counts
 the caller's rows through that role, so a role that sees only some of them would turn
 honest reads into "data crossed". Findings that depend on such a table are held back
 to "not provably foreign"; if it is the membership table, that is every finding. A
@@ -166,12 +166,14 @@ infer your authorization rules.
   its primary key.
 - `tenantVia` — instead of `tenantColumn`, for a table with no tenant column whose
   rows belong to the tenant of a row they reference. `column` holds the id of a row in
-  `table`, and `table` must have a `tenantColumn` of its own: one hop only. Check 1
-  resolves an id through that row, and a filter on `column` counts as a reference.
-  Check 2 counts the table's rows by joining to `table`, so a row whose `column` is
-  null is in no tenant's ceiling, and the role must see every row of both tables. If
-  `column` and the referenced id differ in type (a `text` column holding uuids), they
-  are compared as text, so values spelled differently do not match.
+  `table`. `table` may itself use `tenantVia`, as long as the chain ends at a table
+  with a `tenantColumn` and never comes back to a table it passed. Check 1 resolves an
+  id through that chain, and a filter on `column` counts as a reference. Check 2
+  counts the table's rows by joining along the chain, so a row whose `column` is null
+  — or whose chain breaks further on — is in no tenant's ceiling, and the role must see
+  every row of every table on the chain. If `column` and the referenced id differ in
+  type (a `text` column holding uuids), they are compared as text, so values spelled
+  differently do not match.
 - `idColumn` — the primary key, if it is not `id`.
 - `references` — columns holding the id of a row in another listed table. A filter on
   such a column is resolved through that table.

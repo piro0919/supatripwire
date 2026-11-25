@@ -8,10 +8,12 @@
 - `examples/github-actions.yml`: a workflow that runs `check --strict` every hour over
   the last 3 hours, through the shared pooler (GitHub's runners have no IPv6).
 - Config: `tenantVia` maps a table with no tenant column of its own to the tenant of
-  a row it references (`{ "column": "task_id", "table": "tasks" }`), one hop. Check 1
-  resolves ids through that row; check 2 counts rows with a join, and holds back when
-  the role may not see every row of either table. In the exported `TableConfig` type,
-  `tenantColumn` is now absent on such tables.
+  a row it references (`{ "column": "task_id", "table": "tasks" }`). The referenced
+  table may use `tenantVia` too, as long as the chain ends at a tenant column. Check 1
+  resolves ids through the chain; check 2 counts rows with joins along it, and holds
+  back when the role may not see every row of a table on it. In the exported
+  `TableConfig` type, `tenantColumn` is now absent on such tables, and `TenantSource`
+  lists the joins as `hops`.
 - `supatripwire doctor` checks the setup: the role (not a superuser), the configured
   tables and columns, whether RLS lets the role see every row, and the logs API. It
   says what it cannot check: whether the config matches the app.

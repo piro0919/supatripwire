@@ -19,9 +19,11 @@ export {
   parseConfig,
   referencedTable,
   type TableConfig,
+  type TenantHop,
   type TenantSource,
   type TenantVia,
   tableConfig,
+  tablesOnTenantPath,
   tenantSource,
 } from "./config.js";
 export { rowsReturned, visibleAtLeast } from "./content-range.js";

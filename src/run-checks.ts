@@ -1,7 +1,7 @@
 import { tablesToInspect, type Visibility } from "./access.js";
 import { evaluateNamedTenant } from "./check-named-tenant.js";
 import { evaluateRowCeiling } from "./check-row-ceiling.js";
-import { type Config, tableConfig } from "./config.js";
+import { type Config, tableConfig, tablesOnTenantPath } from "./config.js";
 import { rowsReturned } from "./content-range.js";
 import type { TenantDirectory } from "./directory.js";
 import type { CheckSummary } from "./findings.js";
@@ -84,7 +84,9 @@ export async function runChecks(
           finding.kind === "crossed" &&
           (membershipVisibility !== undefined ||
             (finding.check === "row-ceiling" &&
-              countedTables(config, finding.table).some((t) => limited.has(t))))
+              tablesOnTenantPath(config, finding.table).some((t) =>
+                limited.has(t),
+              )))
         ) {
           finding.kind = "unconfirmed";
           summary.crossedHeldBack++;
@@ -93,9 +95,9 @@ export async function runChecks(
         if (finding.memberTenants.length === 0) {
           summary.usersWithoutMembership.add(finding.userId);
         } else if (finding.check === "row-ceiling" && finding.ceiling === 0) {
-          // A role that cannot see the rows of the table a tenantVia table
-          // counts through also gives 0, so name that table too.
-          for (const t of countedTables(config, finding.table))
+          // A role that cannot see the rows of the tables a tenantVia table
+          // counts through also gives 0, so name those tables too.
+          for (const t of tablesOnTenantPath(config, finding.table))
             summary.tablesWithEmptyCeiling.add(t);
         }
       }
@@ -122,9 +124,9 @@ export async function runChecks(
       }
       continue;
     }
-    // Only tables this run read count as a gap — with the table a tenantVia
+    // Only tables this run read count as a gap — with the tables a tenantVia
     // table counts through — plus membership (above).
-    for (const table of countedTables(config, entry.table)) {
+    for (const table of tablesOnTenantPath(config, entry.table)) {
       const visibility = limited.get(table);
       if (visibility)
         summary.tablesWithLimitedVisibility.set(table, visibility);
@@ -142,16 +144,6 @@ export async function runChecks(
   }
   await flush();
   return summary;
-}
-
-/**
- * The tables check 2 counts rows in for a read of `table`: the table itself,
- * and for a tenantVia table also the table holding the tenant. If the role
- * sees only some rows of either, the ceiling can come out too low.
- */
-function countedTables(config: Config, table: string): string[] {
-  const via = tableConfig(config, table)?.tenantVia;
-  return via ? [table, via.table] : [table];
 }
 
 function increment(counts: Map<string, number>, key: string): void {

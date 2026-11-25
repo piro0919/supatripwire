@@ -128,25 +128,31 @@ export function createPgDirectory(
 
   /**
    * Like `lookup`, for a tenantVia table: matches `values` on its `column`,
-   * then reads the tenant from the row it references.
+   * then follows the chain and reads the tenant from the last row.
    */
   async function lookupVia(
     table: string,
     column: string,
-    source: TenantSource & { via: NonNullable<TenantSource["via"]> },
+    source: TenantSource,
     values: string[],
   ): Promise<Array<{ k: string; v: string | null }>> {
-    const x = quoteIdent(table);
     const c = quoteIdent(column);
     const type = await columnType(table, column);
-    const joinOn = await viaJoin(table, source.table, source.via);
+    const conds = await hopConditions(source);
+    // From the table read outward: a0, then a1 … a<n>.
+    const joins = source.hops.map(
+      (hop, i) => `join ${quoteIdent(hop.to)} as a${i + 1} on ${conds[i]}`,
+    );
+    const last = `a${source.hops.length}`;
     return typedOrText(type, values, async (cast, batch) => {
-      const on = cast ? `x.${c} = u.input::${cast}` : `x.${c}::text = u.input`;
+      const on = cast
+        ? `a0.${c} = u.input::${cast}`
+        : `a0.${c}::text = u.input`;
       const r = await pool.query<{ k: string; v: string | null }>(
-        `select u.input as k, r.${quoteIdent(source.column)}::text as v
+        `select u.input as k, ${last}.${quoteIdent(source.column)}::text as v
            from unnest($1::text[]) as u(input)
-           join ${x} as x on ${on}
-           join ${quoteIdent(source.table)} as r on ${joinOn}`,
+           join ${quoteIdent(table)} as a0 on ${on}
+           ${joins.join("\n           ")}`,
         [batch],
       );
       return r.rows;
@@ -154,27 +160,31 @@ export function createPgDirectory(
   }
 
   /**
-   * The join condition from a tenantVia table `x` to the row `r` it
-   * references. Compared as is when both columns have the same type, which
-   * keeps the index usable; as text otherwise, so a `text` column holding
-   * uuids cannot fail the run with "operator does not exist". The text
-   * comparison can miss differently spelled values (upper-case uuids), which
-   * only leaves a row out — never assigns it to a wrong tenant.
+   * The join conditions along a tenantVia chain: `a0` is the table read,
+   * `a<i+1>` the table hop `i` points at, and condition `i` links `a<i>` to
+   * `a<i+1>`. Callers write the joins starting from the side their input
+   * matches, as Postgres keeps the written order past `join_collapse_limit`.
+   *
+   * Compared as is when both columns have the same type, which keeps the
+   * index usable; as text otherwise, so a `text` column holding uuids cannot
+   * fail the run with "operator does not exist". The text comparison can miss
+   * differently spelled values (upper-case uuids), which only leaves a row
+   * out — never assigns it to a wrong tenant.
    */
-  async function viaJoin(
-    table: string,
-    target: string,
-    via: NonNullable<TenantSource["via"]>,
-  ): Promise<string> {
-    const [from, to] = await Promise.all([
-      columnType(table, via.column),
-      columnType(target, via.idColumn),
-    ]);
-    const xc = `x.${quoteIdent(via.column)}`;
-    const rc = `r.${quoteIdent(via.idColumn)}`;
-    return from !== null && from === to
-      ? `${rc} = ${xc}`
-      : `${rc}::text = ${xc}::text`;
+  async function hopConditions(source: TenantSource): Promise<string[]> {
+    return Promise.all(
+      source.hops.map(async (hop, i) => {
+        const [from, to] = await Promise.all([
+          columnType(hop.from, hop.column),
+          columnType(hop.to, hop.idColumn),
+        ]);
+        const fc = `a${i}.${quoteIdent(hop.column)}`;
+        const tc = `a${i + 1}.${quoteIdent(hop.idColumn)}`;
+        return from !== null && from === to
+          ? `${tc} = ${fc}`
+          : `${tc}::text = ${fc}::text`;
+      }),
+    );
   }
 
   return {
@@ -201,9 +211,10 @@ export function createPgDirectory(
       const source = tenantSource(config, table);
       if (!t || !source || ids.length === 0) return result;
       const idColumn = t.idColumn ?? "id";
-      const rows = source.via
-        ? await lookupVia(table, idColumn, { ...source, via: source.via }, ids)
-        : await lookup(table, idColumn, source.column, ids);
+      const rows =
+        source.hops.length > 0
+          ? await lookupVia(table, idColumn, source, ids)
+          : await lookup(table, idColumn, source.column, ids);
       for (const row of rows) {
         if (row.v !== null) result.set(row.k, row.v);
       }
@@ -245,25 +256,29 @@ export function createPgDirectory(
       const result = new Map<string, number>(tenants.map((t) => [t, 0]));
       const source = tenantSource(config, table);
       if (!source || tenants.length === 0) return result;
-      const tq = quoteIdent(source.table);
       const c = quoteIdent(source.column);
       const type = await columnType(source.table, source.column);
-      // For a tenantVia table, rows are counted through the referenced row:
-      // `r` is the table holding the tenant, `x` the table read.
-      const via = source.via
-        ? `join ${quoteIdent(table)} as x on ${await viaJoin(table, source.table, source.via)}`
-        : "";
+      // For a tenantVia table, rows of the table read (`a0`) are counted
+      // through the chain to the table holding the tenant (`a<n>`). Each hop
+      // points at a primary key, so every `a0` row joins at most once.
+      const n = source.hops.length;
+      const last = `a${n}`;
+      const conds = await hopConditions(source);
+      // From the tenant inward: a<n>, then a<n-1> … a0.
+      const joins = source.hops
+        .map((hop, i) => `join ${quoteIdent(hop.from)} as a${i} on ${conds[i]}`)
+        .reverse();
       // Grouped by the input spelling so the keys match the membership ids.
       // bigint comes back from pg as a string.
       const rows = await typedOrText(type, tenants, async (cast, batch) => {
         const on = cast
-          ? `r.${c} = u.input::${cast}`
-          : `r.${c}::text = u.input`;
+          ? `${last}.${c} = u.input::${cast}`
+          : `${last}.${c}::text = u.input`;
         const r = await pool.query<{ k: string; n: string }>(
           `select u.input as k, count(*) as n
              from unnest($1::text[]) as u(input)
-             join ${tq} as r on ${on}
-             ${via}
+             join ${quoteIdent(source.table)} as ${last} on ${on}
+             ${joins.join("\n             ")}
             group by u.input`,
           [batch],
         );

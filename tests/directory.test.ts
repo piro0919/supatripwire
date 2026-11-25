@@ -32,6 +32,8 @@ const config = parseConfig({
     tickets: { tenantColumn: "org_id" },
     comments: { tenantVia: { column: "project_id", table: "projects" } },
     notes: { tenantVia: { column: "project_ref", table: "projects" } },
+    // Two hops: reactions → comments → projects.
+    reactions: { tenantVia: { column: "comment_id", table: "comments" } },
   },
 });
 
@@ -59,7 +61,13 @@ describe.skipIf(!adminUrl)("createPgDirectory against Postgres", () => {
       -- The reference held as text while projects.id is uuid.
       create table notes (id int primary key, project_ref text, body text);
       insert into notes values (1, '${PROJECT_B}', 'secret');
+      -- Two hops away from the tenant; the reference held as bigint while comments.id is int.
+      create table reactions (id int primary key, comment_id bigint, emoji text);
+      insert into reactions values (1, 1, 'x'), (2, 2, 'x'), (3, 3, 'x'), (4, 3, 'x'), (5, 4, 'x'), (6, null, 'x');
       create role ${role} login password 'pw';
+      grant select (id, comment_id) on reactions to ${role};
+      alter table reactions enable row level security;
+      create policy reader on reactions for select to ${role} using (true);
       grant select (id, project_ref) on notes to ${role};
       alter table notes enable row level security;
       create policy reader on notes for select to ${role} using (true);
@@ -208,6 +216,19 @@ describe.skipIf(!adminUrl)("createPgDirectory against Postgres", () => {
     expect(Object.fromEntries(rows)).toEqual({ "1": ORG_B });
     const counts = await directory.rowCounts("notes", [ORG_A, ORG_B]);
     expect(Object.fromEntries(counts)).toEqual({ [ORG_A]: 0, [ORG_B]: 1 });
+  });
+
+  it("maps and counts rows two tenantVia hops away", async () => {
+    // Reaction 5 is on comment 4, which has no project; 6 is on no comment.
+    const rows = await directory.tenantsOfRows("reactions", [
+      "1",
+      "3",
+      "5",
+      "6",
+    ]);
+    expect(Object.fromEntries(rows)).toEqual({ "1": ORG_A, "3": ORG_B });
+    const counts = await directory.rowCounts("reactions", [ORG_A, ORG_B]);
+    expect(Object.fromEntries(counts)).toEqual({ [ORG_A]: 1, [ORG_B]: 3 });
   });
 
   it("runs both checks end to end on a tenantVia table", async () => {

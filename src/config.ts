@@ -76,35 +76,67 @@ export function referencedTable(
   return refs && Object.hasOwn(refs, column) ? refs[column] : undefined;
 }
 
+/** One step of a `tenantVia` chain: `from.column` holds the id of a row in `to`. */
+export type TenantHop = {
+  from: string;
+  column: string;
+  to: string;
+  /** The primary key of `to`. */
+  idColumn: string;
+};
+
 export type TenantSource = {
   /** The table holding the tenant column. */
   table: string;
   column: string;
-  /** For a tenantVia table: its referencing column and the target's id column. */
-  via?: { column: string; idColumn: string };
+  /**
+   * For a tenantVia table, the joins from the table read to `table`, in that
+   * order. Empty when the table holds its own tenant column.
+   */
+  hops: TenantHop[];
 };
 
 /**
  * Where the tenant of a configured table's rows is read: the table and
- * column holding it, and — for a `tenantVia` table — how to join to it.
- * Undefined when the config is inconsistent (a hand-built one, as
- * `parseConfig` rejects these).
+ * column holding it, and — for a `tenantVia` table — the chain of joins to
+ * it. Undefined when the config is inconsistent (a hand-built one, as
+ * `parseConfig` rejects these): a missing table or a chain that loops.
  */
 export function tenantSource(
   config: Config,
   name: string,
 ): TenantSource | undefined {
-  const t = tableConfig(config, name);
-  if (!t) return undefined;
-  if (t.tenantColumn !== undefined)
-    return { table: name, column: t.tenantColumn };
-  const target = tableConfig(config, t.tenantVia.table);
-  if (target?.tenantColumn === undefined) return undefined;
-  return {
-    table: t.tenantVia.table,
-    column: target.tenantColumn,
-    via: { column: t.tenantVia.column, idColumn: target.idColumn ?? "id" },
-  };
+  const hops: TenantHop[] = [];
+  const seen = new Set<string>();
+  let current = name;
+  for (;;) {
+    if (seen.has(current)) return undefined;
+    seen.add(current);
+    const t = tableConfig(config, current);
+    if (!t) return undefined;
+    if (t.tenantColumn !== undefined)
+      return { table: current, column: t.tenantColumn, hops };
+    const target = tableConfig(config, t.tenantVia.table);
+    if (!target) return undefined;
+    hops.push({
+      from: current,
+      column: t.tenantVia.column,
+      to: t.tenantVia.table,
+      idColumn: target.idColumn ?? "id",
+    });
+    current = t.tenantVia.table;
+  }
+}
+
+/**
+ * The tables whose rows decide a read of `table`: the table itself, then —
+ * for a tenantVia table — every table its chain passes through. If the role
+ * sees only some rows of any of them, ids resolve to nothing and the ceiling
+ * comes out too low.
+ */
+export function tablesOnTenantPath(config: Config, table: string): string[] {
+  const source = tenantSource(config, table);
+  return source ? [table, ...source.hops.map((h) => h.to)] : [table];
 }
 
 export class ConfigError extends Error {
@@ -226,12 +258,18 @@ export function parseConfig(json: unknown): Config {
           `tables.${name}.references.${via.column} points at "${listed}", but tenantVia says "${via.table}"`,
         );
       }
-      // One hop only: the count for check 2 is a single join.
-      if (tables[via.table]?.tenantColumn === undefined) {
-        throw new ConfigError(
-          `tables.${name}.tenantVia.table is "${via.table}", which has no tenantColumn of its own; point at the table that holds the tenant`,
-        );
-      }
+    }
+  }
+  // Chains may run through several tenantVia tables, but must end at a table
+  // with its own tenantColumn. Checked once every target is known to exist.
+  for (const [name, table] of Object.entries(tables)) {
+    if (
+      table.tenantVia &&
+      !tenantSource({ projectRef, membership, tables }, name)
+    ) {
+      throw new ConfigError(
+        `tables.${name}.tenantVia leads back to a table it already passed through; the chain must end at a table with a tenantColumn`,
+      );
     }
   }
 
