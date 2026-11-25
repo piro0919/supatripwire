@@ -1,0 +1,44 @@
+{
+  "meta": {
+    "title": "supatripwire — Cross-Tenant Read Detection for Supabase",
+    "description": "supatripwire reads your Supabase project's API gateway logs and reports reads where one tenant got another tenant's rows. Nothing sits in the request path, and no row contents are read."
+  },
+  "nav": {
+    "docs": "Documentation"
+  },
+  "hero": {
+    "title": "Cross-Tenant Read Detection for Supabase",
+    "lead": "supatripwire reads your project's API gateway logs and reports reads where one tenant got another tenant's rows.",
+    "install": "Install supatripwire",
+    "start": "Get Started"
+  },
+  "features": {
+    "named": {
+      "title": "It named another tenant",
+      "body": "The log keeps the filter every signed-in read sent. supatripwire resolves each id in it to a tenant and compares it with the caller's memberships. Rows came back: data crossed. None came back: RLS stopped an attempt.",
+      "more": "Read more about <link>what it reports</link> in the README."
+    },
+    "ceiling": {
+      "title": "More rows than they could see",
+      "body": "Filters only ever narrow. A read that saw more rows than the caller's tenants hold crossed tenants, whatever its filter said, and even with no filter at all."
+    },
+    "outside": {
+      "title": "Nothing in the request path",
+      "body": "Logs come through the Management API, ids through a read-only role you create and grant only the id and tenant columns. No proxy, no SDK, and no row contents read.",
+      "doctor": "Run <code>npx supatripwire doctor</code> to check the setup."
+    }
+  },
+  "terminal": {
+    "check": "supatripwire check reporting two reads that crossed tenants",
+    "named": "A finding from check 1: the read named a tenant the user is not in",
+    "ceiling": "A finding from check 2: the read saw more rows than the user's tenants hold",
+    "doctor": "supatripwire doctor confirming the read-only role sees every row"
+  },
+  "footer": {
+    "docs": "Documentation"
+  },
+  "language": {
+    "ja": "日本語",
+    "en": "English"
+  }
+}

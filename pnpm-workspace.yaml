@@ -1,7 +1,15 @@
+# The landing page (lp/) is a workspace package of its own: Next.js, never published.
+packages:
+  - lp
+
 # pnpm 11 ignores pnpm.onlyBuiltDependencies in package.json and fails the
 # install until every package with a build script is listed here. esbuild is
 # fetched by tsup and vitest; lefthook installs the git hooks.
 allowBuilds:
+  # Not needed to build the landing page.
+  "@parcel/watcher": false
+  "@swc/core": false
+  sharp: false
   esbuild: true
   lefthook: true
 minimumReleaseAgeExclude:

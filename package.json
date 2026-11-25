@@ -55,7 +55,11 @@
     "format": "biome format --write",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "pnpm lint && pnpm typecheck && pnpm test && pnpm build:lib && pnpm check:package",
-    "check:package": "publint --strict && attw --pack . --profile esm-only"
+    "check:package": "publint --strict && attw --pack . --profile esm-only",
+    "lp:dev": "pnpm --filter supatripwire-lp dev",
+    "lp:build": "pnpm --filter supatripwire-lp build",
+    "lp:lint": "pnpm --filter supatripwire-lp lint",
+    "lp:typecheck": "pnpm --filter supatripwire-lp typecheck"
   },
   "dependencies": {
     "pg": "^8.23.1"

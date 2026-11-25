@@ -220,7 +220,9 @@ memberships' own RLS, so it only sees the caller's rows.
   project.
 - Write "Supabase" as one word with a capital S. Do not use Supabase's logo
   ([brand guidelines](https://supabase.com/brand)).
-- Everything in this repository is in English.
+- Everything in this repository is in English, except the Japanese copy of the landing
+  page (`lp/`), which is in English and Japanese like the other piro0919 landing pages
+  (decided 2026-11-26).
 
 ## Code
 
@@ -247,7 +249,25 @@ src/
 └── report.ts              # text and JSON output
 tests/                     # vitest; directory.test.ts needs SUPATRIPWIRE_TEST_DATABASE_URL
 examples/github-actions.yml  # scheduled `check --strict` for users to copy
+lp/                        # landing page, supatripwire.kkweb.io (not published to npm)
 ```
+
+### Landing page (`lp/`)
+
+- A pnpm workspace package: Next.js + next-intl, English and Japanese, set up like the
+  other piro0919 landing pages (Poi, Owler). Its own Biome config, so the root
+  `biome.json` ignores `lp/` and lefthook checks it from inside. `pnpm lp:dev`,
+  `lp:build`, `lp:lint`, `lp:typecheck`; CI builds it.
+- **The model is zizmor.sh** (agreed 2026-11-26, after the Poi/Owler black page with
+  white round buttons was turned down). Colors and sizes come from zizmor's stylesheet;
+  the terminal background `#282c34` was sampled from its screenshots. Light by default,
+  dark from the system setting, no toggle.
+- The terminals show real CLI output, not hand-written text: `formatText` and
+  `runDoctor` run on made-up input (random uuids, a throwaway local Postgres, a stubbed
+  logs API). See `lp/src/app/[locale]/terminal-output.ts`. Print them again if the
+  report's wording changes.
+- Tailwind font-size and color tokens must not share a name: `text-footer` once
+  resolved to the footer's background color and hid the footer links.
 
 - TypeScript, ESM only, Node >= 20. Runtime dependency: `pg`; peer:
   `@opentelemetry/api` (the helper only). Biome, tsup, vitest,

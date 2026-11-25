@@ -2,3 +2,9 @@ node_modules
 dist
 *.tsbuildinfo
 *.tgz
+.vercel/
+
+# Landing page: generated on build or by `next dev`
+lp/public/sitemap*.xml
+lp/public/robots.txt
+lp/AGENTS.md

@@ -3,6 +3,13 @@ pre-commit:
   commands:
     biome:
       glob: "*.{js,jsx,ts,tsx,json}"
+      exclude: "lp/**"
+      run: npx biome check --write {staged_files}
+      stage_fixed: true
+    # lp/ has its own Biome config (Next.js and Tailwind rules), so it is checked from there.
+    biome-lp:
+      root: "lp/"
+      glob: "*.{js,jsx,ts,tsx,json,css}"
       run: npx biome check --write {staged_files}
       stage_fixed: true
     secretlint:

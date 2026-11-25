@@ -58,3 +58,19 @@ jobs:
       - run: node dist/cli.js --help
       - run: node --input-type=module -e "const m = await import('supatripwire'); if (typeof m.runChecks !== 'function') process.exit(1);"
       - run: node --input-type=module -e "const m = await import('supatripwire/fetch'); if (typeof m.tripwireFetch !== 'function') process.exit(1);"
+
+  # The landing page in lp/. Never published to npm; built here so a broken page
+  # is caught before Vercel tries to deploy it.
+  lp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lp:lint
+      - run: pnpm lp:typecheck
+      - run: pnpm lp:build
