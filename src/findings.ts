@@ -47,8 +47,23 @@ export type Finding = NamedTenantFinding | RowCeilingFinding;
 
 export type CheckSummary = {
   findings: Finding[];
-  /** Signed-in GETs read from the logs. */
+  /**
+   * Signed-in GETs to `/rest/v1/` read from the logs. This is the whole
+   * denominator: writes, anonymous reads, secret-key requests and anything not
+   * in the logs are outside it.
+   */
   readsScanned: number;
+  /** Timestamp of the first and last read found, or null when there were none. */
+  firstReadAt: string | null;
+  lastReadAt: string | null;
+  /**
+   * Successful reads on configured tables whose `content_range` was missing or
+   * unreadable. Check 2 cannot judge them and check 1 cannot call them
+   * crossed: they were scanned, not checked.
+   */
+  readsWithoutRowCount: number;
+  /** Configured tables with such reads, with how many each had. */
+  tablesWithoutRowCount: Map<string, number>;
   /** Reads on a table the config does not list. */
   readsOnUnmappedTables: number;
   /** Unmapped table names with how many reads each had. */

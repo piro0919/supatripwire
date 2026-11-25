@@ -1,12 +1,15 @@
 import { evaluateNamedTenant } from "./check-named-tenant.js";
 import { evaluateRowCeiling } from "./check-row-ceiling.js";
 import type { Config } from "./config.js";
+import { rowsReturned } from "./content-range.js";
 import type { TenantDirectory } from "./directory.js";
 import type { CheckSummary } from "./findings.js";
 import type { ReadLogEntry } from "./logs.js";
 import { Lookups } from "./lookups.js";
 
 const DEFAULT_BATCH_SIZE = 500;
+const HTTP_OK_MIN = 200;
+const HTTP_OK_MAX = 299;
 
 /**
  * Runs both checks over the log entries in one pass.
@@ -26,6 +29,10 @@ export async function runChecks(
   const summary: CheckSummary = {
     findings: [],
     readsScanned: 0,
+    firstReadAt: null,
+    lastReadAt: null,
+    readsWithoutRowCount: 0,
+    tablesWithoutRowCount: new Map(),
     readsOnUnmappedTables: 0,
     unmappedTables: new Map(),
     usersWithoutMembership: new Set(),
@@ -55,17 +62,28 @@ export async function runChecks(
 
   for await (const entry of entries) {
     summary.readsScanned++;
+    // Entries come oldest first.
+    summary.firstReadAt ??= entry.timestamp;
+    summary.lastReadAt = entry.timestamp;
     if (!config.tables[entry.table]) {
       summary.readsOnUnmappedTables++;
-      summary.unmappedTables.set(
-        entry.table,
-        (summary.unmappedTables.get(entry.table) ?? 0) + 1,
-      );
+      increment(summary.unmappedTables, entry.table);
       continue;
+    }
+    // An error response returned no rows, so it has nothing to judge.
+    const succeeded =
+      entry.status >= HTTP_OK_MIN && entry.status <= HTTP_OK_MAX;
+    if (succeeded && rowsReturned(entry.contentRange) === null) {
+      summary.readsWithoutRowCount++;
+      increment(summary.tablesWithoutRowCount, entry.table);
     }
     batch.push(entry);
     if (batch.length >= batchSize) await flush();
   }
   await flush();
   return summary;
+}
+
+function increment(counts: Map<string, number>, key: string): void {
+  counts.set(key, (counts.get(key) ?? 0) + 1);
 }

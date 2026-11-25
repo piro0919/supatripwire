@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- The report shows what was checked: when the first and last reads were found, how
+  many were fully checked, and how many successful reads had no row count. It ends
+  with the coverage gaps found, also listed in the JSON as `coverageGaps`.
+- `--strict` exits with status 3 when nothing crossed but the run has a coverage gap,
+  such as no reads found at all — which is also what an expired log range looks like.
+
 - Findings show the request's query with filter values hidden, except on the table's
   tenant, id and reference columns, so names or emails an app filtered on do not end
   up in CI logs.

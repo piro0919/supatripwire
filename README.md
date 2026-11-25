@@ -50,6 +50,29 @@ log id to see the full request in the Supabase dashboard.
 The command exits with status 1 when data crossed, 0 otherwise, and 2 on error, so a
 scheduled job can fail loudly.
 
+### What "nothing found" covers
+
+No findings means no evidence among the reads that were checked — not that nothing
+leaked. The report says how many that was:
+
+- **Signed-in reads scanned** — every signed-in `GET` to `/rest/v1/` in the logs for
+  the range, and when the first and last were found. This is the whole denominator:
+  writes, anonymous reads, secret-key requests and anything else on the list below
+  are outside it.
+- **Fully checked** — reads on configured tables with a row count.
+- **On tables missing from the config** — not checked at all.
+- **Without a row count** — successful reads whose `content_range` was missing or
+  unreadable. Check 2 cannot judge them, and check 1 cannot call them crossed.
+
+When no reads are found, the range may be older than your logs: the logs API returns
+an empty result rather than an error once logs are no longer kept.
+
+The report ends with the coverage gaps it found: `no-reads`, `unmapped-tables`,
+`no-row-count`, `users-without-membership` and `empty-ceiling` (the last two are the
+warnings above). With `--strict`, a run that found no crossed data but has a gap exits
+with status 3, so a scheduled job also fails when it could not look properly. Crossed
+data still exits with 1.
+
 ## Setup
 
 ### 1. A read-only database role
@@ -127,6 +150,7 @@ npx supatripwire check                 # the last 24 hours
 npx supatripwire check --since 7d
 npx supatripwire check --from 2026-01-01T00:00:00Z --to 2026-01-02T00:00:00Z
 npx supatripwire check --json
+npx supatripwire check --strict        # also fail (status 3) on coverage gaps
 ```
 
 How far back you can look depends on your plan's

@@ -126,6 +126,11 @@ Checked against real projects, not just docs.
   1 day on Free, 7 on Pro, 28 on Team, 90 on Enterprise
   ([docs](https://supabase.com/docs/guides/telemetry/logs)). Rate limit 120 requests per
   minute per user, project and endpoint.
+  Checked 2026-11-25 through the Supabase MCP's `query_logs` (not the CLI's own call):
+  a range with no logs — before the project existed — returns an empty result, not
+  an error. So an expired range looks exactly like a quiet one; hence the `no-reads`
+  coverage gap. On a Pro project, `edge_logs` from 85 days back were still returned,
+  so the documented retention is a floor, not a cut-off we can rely on.
 - The OAuth scope table has no row for logs, and running SQL falls under Database write
   ([docs](https://supabase.com/docs/guides/integrations/build-a-supabase-oauth-integration/oauth-scopes)).
   So a third-party OAuth app reading logs is not documented — hence a personal access
@@ -180,7 +185,7 @@ Checked against real projects, not just docs.
 
 ```text
 src/
-├── cli.ts                 # `supatripwire check`; exit 0 / 1 (crossed) / 2 (error)
+├── cli.ts                 # `supatripwire check`; exit 0 / 1 (crossed) / 2 (error) / 3 (--strict, gaps)
 ├── index.ts               # library exports
 ├── fetch.ts               # `supatripwire/fetch`: tripwireFetch (traceparent, x-forwarded-for)
 ├── config.ts              # supatripwire.json parsing; names must be plain identifiers
@@ -192,6 +197,7 @@ src/
 ├── lookups.ts             # per-run cache; prefetches what a batch of entries needs
 ├── run-checks.ts          # one pass over the logs, both checks per entry
 ├── findings.ts            # finding and summary types
+├── coverage.ts            # coverage gaps and the exit status
 ├── check-named-tenant.ts  # check 1
 ├── check-row-ceiling.ts   # check 2
 └── report.ts              # text and JSON output

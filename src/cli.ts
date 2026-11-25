@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
 import { ConfigError, loadConfig } from "./config.js";
+import { exitCode } from "./coverage.js";
 import { createPgDirectory } from "./directory.js";
 import { fetchReadLogs, LogsApiError } from "./logs.js";
 import { formatJson, formatText } from "./report.js";
@@ -17,13 +18,17 @@ Options:
       --from <iso>      Start of the range, instead of --since
       --to <iso>        End of the range (default: now)
       --json            Print the report as JSON
+      --strict          Exit with 3 when the run has coverage gaps: no reads
+                        found, reads on unconfigured tables or without a row
+                        count, users without membership, or empty ceilings
   -h, --help            Show this help
 
 Environment:
   SUPABASE_ACCESS_TOKEN       Personal access token, to read the logs
   SUPATRIPWIRE_DATABASE_URL   Connection string for the read-only role
 
-Exit status: 0 when no data crossed, 1 when it did, 2 on error.
+Exit status: 0 when no data crossed, 1 when it did, 2 on error, and with
+--strict, 3 when nothing crossed but the run has coverage gaps.
 `;
 
 function parseSpan(span: string): number {
@@ -61,6 +66,7 @@ function parse(argv: string[]) {
       from: { type: "string" },
       to: { type: "string" },
       json: { type: "boolean", default: false },
+      strict: { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
     },
   });
@@ -113,7 +119,7 @@ async function main(argv: string[]): Promise<number> {
     process.stdout.write(
       values.json ? formatJson(summary, range) : formatText(summary, range),
     );
-    return summary.findings.some((f) => f.kind === "crossed") ? 1 : 0;
+    return exitCode(summary, values.strict);
   } finally {
     await directory.close();
   }

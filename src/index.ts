@@ -12,6 +12,7 @@ export {
   type TableConfig,
 } from "./config.js";
 export { rowsReturned, visibleAtLeast } from "./content-range.js";
+export { type CoverageGap, coverageGaps, exitCode } from "./coverage.js";
 export { createPgDirectory, type TenantDirectory } from "./directory.js";
 export type {
   CheckSummary,

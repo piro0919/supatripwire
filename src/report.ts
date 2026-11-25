@@ -1,3 +1,4 @@
+import { coverageGaps } from "./coverage.js";
 import type { CheckSummary, Finding } from "./findings.js";
 
 const ORDER = { crossed: 0, unconfirmed: 1, attempt: 2 } as const;
@@ -17,6 +18,29 @@ export function formatText(
     `supatripwire — ${range.from.toISOString()} to ${range.to.toISOString()}`,
   );
   lines.push(`Signed-in reads scanned: ${summary.readsScanned}`);
+  if (summary.firstReadAt && summary.lastReadAt) {
+    lines.push(
+      `  found from ${summary.firstReadAt} to ${summary.lastReadAt} (UTC)`,
+    );
+  } else {
+    lines.push(
+      "  None found. Either nothing was read, or the logs for this range are no",
+    );
+    lines.push(
+      "  longer kept: the logs API returns an empty result for both. Nothing was checked.",
+    );
+  }
+  if (summary.readsScanned > 0) {
+    const checked =
+      summary.readsScanned -
+      summary.readsOnUnmappedTables -
+      summary.readsWithoutRowCount;
+    lines.push(`  fully checked: ${checked}`);
+    lines.push(
+      `  on tables missing from the config: ${summary.readsOnUnmappedTables}`,
+    );
+    lines.push(`  without a row count: ${summary.readsWithoutRowCount}`);
+  }
 
   const sorted = [...summary.findings].sort(
     (a, b) =>
@@ -38,6 +62,20 @@ export function formatText(
     );
     const tables = [...summary.unmappedTables].sort((a, b) => b[1] - a[1]);
     for (const [table, count] of tables) lines.push(`  ${table} (${count})`);
+  }
+
+  if (summary.tablesWithoutRowCount.size > 0) {
+    lines.push("");
+    lines.push(
+      `Not fully checked — ${summary.readsWithoutRowCount} successful reads logged no readable row count (content_range):`,
+    );
+    const tables = [...summary.tablesWithoutRowCount].sort(
+      (a, b) => b[1] - a[1],
+    );
+    for (const [table, count] of tables) lines.push(`  ${table} (${count})`);
+    lines.push(
+      "  Check 2 cannot judge them, and check 1 cannot call them crossed.",
+    );
   }
 
   if (summary.usersWithoutMembership.size > 0) {
@@ -63,6 +101,14 @@ export function formatText(
       "  Those reads are not reported as crossed. Check that the read-only role can",
     );
     lines.push("  see the table's rows (RLS policy for the role).");
+  }
+
+  const gaps = coverageGaps(summary);
+  if (gaps.length > 0) {
+    lines.push("");
+    lines.push(
+      `Coverage gaps: ${gaps.join(", ")}. With --strict, these exit with status 3.`,
+    );
   }
   return `${lines.join("\n")}\n`;
 }
@@ -95,6 +141,11 @@ export function formatJson(
       from: range.from.toISOString(),
       to: range.to.toISOString(),
       readsScanned: summary.readsScanned,
+      firstReadAt: summary.firstReadAt,
+      lastReadAt: summary.lastReadAt,
+      coverageGaps: coverageGaps(summary),
+      readsWithoutRowCount: summary.readsWithoutRowCount,
+      tablesWithoutRowCount: Object.fromEntries(summary.tablesWithoutRowCount),
       readsOnUnmappedTables: summary.readsOnUnmappedTables,
       unmappedTables: Object.fromEntries(summary.unmappedTables),
       usersWithoutMembership: [...summary.usersWithoutMembership].sort(),
