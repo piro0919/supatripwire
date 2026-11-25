@@ -252,23 +252,6 @@ examples/github-actions.yml  # scheduled `check --strict` for users to copy
 lp/                        # landing page, supatripwire.kkweb.io (not published to npm)
 ```
 
-### Landing page (`lp/`)
-
-- A pnpm workspace package: Next.js + next-intl, English and Japanese, set up like the
-  other piro0919 landing pages (Poi, Owler). Its own Biome config, so the root
-  `biome.json` ignores `lp/` and lefthook checks it from inside. `pnpm lp:dev`,
-  `lp:build`, `lp:lint`, `lp:typecheck`; CI builds it.
-- **The model is zizmor.sh** (agreed 2026-11-26, after the Poi/Owler black page with
-  white round buttons was turned down). Colors and sizes come from zizmor's stylesheet;
-  the terminal background `#282c34` was sampled from its screenshots. Light by default,
-  dark from the system setting, no toggle.
-- The terminals show real CLI output, not hand-written text: `formatText` and
-  `runDoctor` run on made-up input (random uuids, a throwaway local Postgres, a stubbed
-  logs API). See `lp/src/app/[locale]/terminal-output.ts`. Print them again if the
-  report's wording changes.
-- Tailwind font-size and color tokens must not share a name: `text-footer` once
-  resolved to the footer's background color and hid the footer links.
-
 - TypeScript, ESM only, Node >= 20. Runtime dependency: `pg`; peer:
   `@opentelemetry/api` (the helper only). Biome, tsup, vitest,
   lefthook — same setup as the other piro0919 packages.
@@ -300,6 +283,23 @@ pnpm secretlint  # secrets in the tree
 pnpm build:lib   # tsup -> dist
 pnpm check:package
 ```
+
+### Landing page (`lp/`)
+
+- A pnpm workspace package: Next.js + next-intl, English and Japanese, set up like the
+  other piro0919 landing pages (Poi, Owler). Its own Biome config, so the root
+  `biome.json` ignores `lp/` and lefthook checks it from inside. `pnpm lp:dev`,
+  `lp:build`, `lp:lint`, `lp:typecheck`; CI builds it.
+- **The model is zizmor.sh** (agreed 2026-11-26, after the Poi/Owler black page with
+  white round buttons was turned down). Colors and sizes come from zizmor's stylesheet;
+  the terminal background `#282c34` was sampled from its screenshots. Light by default,
+  dark from the system setting, no toggle.
+- The terminals show real CLI output, not hand-written text: `formatText` and
+  `runDoctor` run on made-up input (random uuids, a throwaway local Postgres, a stubbed
+  logs API). See `lp/src/app/[locale]/terminal-output.ts`. Print them again if the
+  report's wording changes.
+- Tailwind font-size and color tokens must not share a name: `text-footer` once
+  resolved to the footer's background color and hid the footer links.
 
 ## Open questions
 

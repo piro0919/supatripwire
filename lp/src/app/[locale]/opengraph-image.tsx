@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ImageResponse } from "next/og";
+import { getTranslations } from "next-intl/server";
 import { routing } from "@/i18n/routing";
 
 export const alt = "supatripwire";
@@ -25,8 +26,8 @@ export default async function OgImage({
   params: Promise<{ locale: string }>;
 }): Promise<ImageResponse> {
   const { locale } = await params;
-  const isJa = locale === "ja";
-  /* Faces cut down to the characters drawn here. If the copy changes, cut them again as
+  const t = await getTranslations({ locale, namespace: "hero" });
+  /* Faces cut down to the characters drawn here: the name and hero.title. If either changes, cut them again as
      assets/README.md describes. */
   const [inter, noto] = await Promise.all([
     readFile(join(process.cwd(), "assets/Inter-Bold-subset.woff")),
@@ -47,9 +48,7 @@ export default async function OgImage({
     >
       <div style={{ color: INK, fontSize: 120, fontWeight: 700 }}>supatripwire</div>
       <div style={{ color: MUTED, display: "flex", fontSize: 44, fontWeight: 700, marginTop: 16 }}>
-        {isJa
-          ? "Supabase のテナントを越えた読み取りを検知"
-          : "Cross-Tenant Read Detection for Supabase"}
+        {t("title")}
       </div>
     </div>,
     {

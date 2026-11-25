@@ -1,5 +1,5 @@
 import { createNavigation } from "next-intl/navigation";
 import { routing } from "./routing";
 
-// 素の next/link だと言語の記録が更新されず、切り替えてもすぐ元に戻される
+// Plain next/link does not update the stored locale, so a switch would flip straight back.
 export const { Link, redirect, usePathname, useRouter } = createNavigation(routing);
