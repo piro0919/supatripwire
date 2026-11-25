@@ -10,7 +10,8 @@ tenant the caller does not belong to, or saw more rows than the caller's tenants
 
 Nothing sits in the request path, and no row contents are read.
 
-> **Status: early.** Both checks are implemented. The request-header helper is not yet.
+> **Status: early.** Both checks and the request-header helper are implemented. Not yet
+> published.
 
 ## What it reports
 
@@ -125,6 +126,43 @@ npx supatripwire check --json
 How far back you can look depends on your plan's
 [log retention](https://supabase.com/docs/guides/telemetry/logs): 1 day on Free, 7 on
 Pro, 28 on Team, 90 on Enterprise.
+
+## Tracing a finding back to a request
+
+In a Next.js app using `@supabase/ssr`, almost every request to Supabase comes from your
+server, so Supabase's logs show your server's IP, not the user's, and nothing ties a log
+line to the page request that caused it. `tripwireFetch` wraps the `fetch` that
+`createServerClient` uses and adds two headers:
+
+- `x-forwarded-for` — the end user's IP, logged as `request.headers.x_forwarded_for`.
+  The real sender stays in `request.headers.cf_connecting_ip`.
+- `traceparent` — from the active OpenTelemetry span, logged as `trace_id`. With
+  OpenTelemetry set up (for example `@vercel/otel` in `instrumentation.ts`), that is
+  the trace id of the page request on your hosting platform. Without it, nothing is
+  added.
+
+```ts
+import { createServerClient } from "@supabase/ssr";
+import { headers } from "next/headers";
+import { tripwireFetch } from "supatripwire/fetch";
+
+export async function createClient() {
+  const clientIp = (await headers()).get("x-forwarded-for");
+  return createServerClient(url, key, {
+    cookies: {
+      // as in Supabase's Next.js guide
+    },
+    global: { fetch: tripwireFetch({ clientIp }) },
+  });
+}
+```
+
+On Vercel, `x-forwarded-for` on the incoming request is the client's IP. If you run your
+own proxy in front, pass the header that proxy sets instead. Headers you already set
+are kept. The entry point does not load the CLI or `pg`.
+
+The report gives each finding's log id; look it up in the project's logs in the
+Supabase dashboard to see these two fields.
 
 ## What it cannot see
 

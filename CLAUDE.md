@@ -5,8 +5,8 @@ API gateway logs and a few id-to-tenant mappings from the database, and reports 
 named a tenant the caller does not belong to — or returned more rows than the caller could
 possibly see. Nothing sits in the request path and no row contents are read.
 
-Status: agreed in a sounding-board session on 2026-11-25. Package skeleton and both checks
-implemented; the helper not yet. Not published.
+Status: agreed in a sounding-board session on 2026-11-25. Package skeleton, both checks
+and the helper implemented. Not published.
 
 ## Why this exists
 
@@ -71,7 +71,30 @@ A function that wraps the `fetch` passed to `createServerClient` and adds two he
 - `x-forwarded-for` — the end user's IP lands in `request.headers.x_forwarded_for`.
   The real sender stays in `request.headers.cf_connecting_ip`.
 
-Undecided: ship the helper in the same package as the CLI, or separately.
+Decided 2026-11-25:
+
+- Shipped in the same package as a separate entry, `supatripwire/fetch`, exporting
+  `tripwireFetch({ clientIp, fetch })`. The entry imports only `@opentelemetry/api`, never
+  the CLI or `pg`.
+- The trace id comes from the **active OpenTelemetry span**, via
+  `propagation.inject(context.active(), …)`. Vercel's request id is not a 32-hex trace
+  id, so only an OpenTelemetry trace can be joined to Vercel's logs. With no propagator
+  registered, no `traceparent` is added. `@vercel/otel` can do the same on its own with
+  `fetch.propagateContextUrls`; the helper saves that configuration.
+- `@opentelemetry/api` is a **required peer** (`^1.0.0`), so the helper uses the app's
+  copy. Not a regular dependency: the API refuses a global registered by an older minor
+  (`isCompatible`: own minor must be <= the global's), so our 1.10 next to an app's
+  1.9.1 silently injected nothing — tested with `@vercel/otel`. Not an optional peer:
+  a static import of a missing module breaks the build. npm and pnpm install a missing
+  required peer on their own; tested that the helper then adds only `x-forwarded-for`.
+- With `@vercel/otel`'s `propagateContextUrls` also covering Supabase, the request still
+  carries one `traceparent`, with the page request's trace id (tested).
+- The caller passes the IP (from `next/headers`); the package does not depend on Next.js.
+- Headers the caller already set are kept.
+- Supabase Auth has its own `Sb-Forwarded-For` header for rate limiting by end-user IP
+  (needs the secret key and a project setting). Not used: the goal here is the log, not
+  rate limits. Whether a plain `x-forwarded-for` changes Auth's rate limiting is
+  unverified.
 
 ## Verified facts (2026-11-25)
 
@@ -150,6 +173,7 @@ Checked against real projects, not just docs.
 src/
 ├── cli.ts                 # `supatripwire check`; exit 0 / 1 (crossed) / 2 (error)
 ├── index.ts               # library exports
+├── fetch.ts               # `supatripwire/fetch`: tripwireFetch (traceparent, x-forwarded-for)
 ├── config.ts              # supatripwire.json parsing; names must be plain identifiers
 ├── logs.ts                # Management API log reader: 24h windows, paged by cursor
 ├── search.ts              # eq / in filters out of request.search, incl. and=() / or=()
@@ -164,7 +188,8 @@ src/
 tests/                     # vitest; directory.test.ts needs SUPATRIPWIRE_TEST_DATABASE_URL
 ```
 
-- TypeScript, ESM only, Node >= 20. Runtime dependency: `pg`. Biome, tsup, vitest,
+- TypeScript, ESM only, Node >= 20. Runtime dependency: `pg`; peer:
+  `@opentelemetry/api` (the helper only). Biome, tsup, vitest,
   lefthook — same setup as the other piro0919 packages.
 - `directory.ts` compares ids in the column's own type (`u.input::<type>`) so the
   primary-key index is used, keys results by the string the log spelled, and falls back
@@ -184,6 +209,5 @@ pnpm check:package
 
 ## Open questions
 
-- Helper in the same package or separate (above).
 - How the CLI is run on a schedule — left to the user (cron, GitHub Actions), or built in.
 - Whether this stays OSS only or later gets a hosted version.
