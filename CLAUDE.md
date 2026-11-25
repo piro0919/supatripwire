@@ -96,8 +96,14 @@ Decided 2026-11-25:
   than failing the request.
 - Supabase Auth has its own `Sb-Forwarded-For` header for rate limiting by end-user IP
   (needs the secret key and a project setting). Not used: the goal here is the log, not
-  rate limits. Whether a plain `x-forwarded-for` changes Auth's rate limiting is
-  unverified.
+  rate limits. The helper also wraps auth-js's requests (`createClient` hands
+  `global.fetch` to the auth client too). Auth's source
+  (`internal/api/middleware.go`, `performRateLimiting`) keys its IP limits on
+  `Sb-Forwarded-For` when enabled, else on the first value of the header named by
+  `RATE_LIMIT_HEADER` (empty → no IP limit). Which header hosted Supabase configures
+  there, and whether the gateway rewrites `x-forwarded-for` before Auth sees it, is not
+  public — so whether our header shifts Auth's limits is still unverified. Settling it
+  takes deliberate rate-limit hits against a test project.
 
 ## Verified facts (2026-11-25)
 
