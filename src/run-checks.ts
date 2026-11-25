@@ -41,7 +41,19 @@ export async function runChecks(
     unmappedTables: new Map(),
     usersWithoutMembership: new Set(),
     tablesWithEmptyCeiling: new Set(),
+    tablesWithLimitedVisibility: new Map(),
   };
+
+  // Ask the catalog first: a role that cannot see every row turns certain
+  // findings into false ones.
+  for (const access of (await directory.inspectAccess?.()) ?? []) {
+    if (access.visibility !== "all") {
+      summary.tablesWithLimitedVisibility.set(access.table, access.visibility);
+    }
+  }
+  const membershipLimited = summary.tablesWithLimitedVisibility.has(
+    config.membership.table,
+  );
 
   let batch: ReadLogEntry[] = [];
   const flush = async () => {
@@ -53,6 +65,14 @@ export async function runChecks(
         evaluateRowCeiling(entry, config, lookups),
       ]) {
         if (!finding) continue;
+        if (
+          finding.kind === "crossed" &&
+          (membershipLimited ||
+            (finding.check === "row-ceiling" &&
+              summary.tablesWithLimitedVisibility.has(finding.table)))
+        ) {
+          finding.kind = "unconfirmed";
+        }
         summary.findings.push(finding);
         if (finding.memberTenants.length === 0) {
           summary.usersWithoutMembership.add(finding.userId);

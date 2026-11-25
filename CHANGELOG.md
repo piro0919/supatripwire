@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- `supatripwire doctor` checks the setup: the role (not a superuser), the configured
+  tables and columns, whether RLS lets the role see every row, and the logs API. It
+  says what it cannot check: whether the config matches the app.
+- `check` reads the same catalog facts first. Findings that depend on a table the role
+  may not see in full are held back from "crossed", and the table is a
+  `limited-visibility` coverage gap. Before, a role that saw only some rows made check
+  2 report honest reads as crossed.
 - Config: `ignore` lists names in the request path that are deliberately not checked,
   such as a shared lookup table or `rpc`. Reads on them are counted apart and are not
   a coverage gap.

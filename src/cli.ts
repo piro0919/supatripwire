@@ -3,16 +3,22 @@ import { parseArgs } from "node:util";
 import { ConfigError, loadConfig } from "./config.js";
 import { exitCode } from "./coverage.js";
 import { createPgDirectory } from "./directory.js";
+import { runDoctor } from "./doctor.js";
 import { fetchReadLogs, LogsApiError } from "./logs.js";
 import { formatJson, formatText } from "./report.js";
 import { runChecks } from "./run-checks.js";
 
 const HELP = `Usage: supatripwire check [options]
+       supatripwire doctor [-c <path>]
 
-Reads the project's API gateway logs and reports reads that named a tenant
-the caller does not belong to, or saw more rows than the caller's tenants hold.
+check   Reads the project's API gateway logs and reports reads that named a
+        tenant the caller does not belong to, or saw more rows than the
+        caller's tenants hold.
+doctor  Checks the setup: the read-only role, the configured tables and
+        columns, whether RLS lets the role see every row, and the logs API.
+        Exits 0 when nothing needs fixing, 1 otherwise.
 
-Options:
+Options for check:
   -c, --config <path>   Config file (default: supatripwire.json)
       --since <span>    How far back to look: 30m, 6h, 7d (default: 24h)
       --from <iso>      Start of the range, instead of --since
@@ -20,7 +26,8 @@ Options:
       --json            Print the report as JSON
       --strict          Exit with 3 when the run has coverage gaps: no reads
                         found, reads on unconfigured tables or without a row
-                        count, users without membership, or empty ceilings
+                        count, users without membership, empty ceilings, or
+                        tables the role may not see in full
   -h, --help            Show this help
 
 Environment:
@@ -86,11 +93,21 @@ async function main(argv: string[]): Promise<number> {
     process.stdout.write(HELP);
     return values.help ? 0 : 2;
   }
-  if (positionals[0] !== "check" || positionals.length > 1) {
+  const command = positionals[0];
+  if ((command !== "check" && command !== "doctor") || positionals.length > 1) {
     process.stderr.write(
       `Unknown command: ${positionals.join(" ")}\n\n${HELP}`,
     );
     return 2;
+  }
+  if (command === "doctor") {
+    const result = await runDoctor({
+      config: await loadConfig(values.config),
+      databaseUrl: requireEnv("SUPATRIPWIRE_DATABASE_URL"),
+      accessToken: process.env.SUPABASE_ACCESS_TOKEN,
+    });
+    process.stdout.write(`${result.lines.join("\n")}\n`);
+    return result.ok ? 0 : 1;
   }
   if (values.from && values.since)
     throw new ConfigError("Use either --from or --since, not both");

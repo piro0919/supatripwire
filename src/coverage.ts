@@ -12,13 +12,16 @@ import type { CheckSummary } from "./findings.js";
  * - `users-without-membership` — users in findings with no membership rows.
  * - `empty-ceiling` — tables that returned rows yet hold none in the caller's
  *   tenants, as the read-only role sees them.
+ * - `limited-visibility` — by the catalog, the read-only role may not see
+ *   every row of a table the checks read (or the table does not resolve).
  */
 export type CoverageGap =
   | "no-reads"
   | "unmapped-tables"
   | "no-row-count"
   | "users-without-membership"
-  | "empty-ceiling";
+  | "empty-ceiling"
+  | "limited-visibility";
 
 export const EXIT_CLEAN = 0;
 export const EXIT_CROSSED = 1;
@@ -44,5 +47,7 @@ export function coverageGaps(summary: CheckSummary): CoverageGap[] {
   if (summary.usersWithoutMembership.size > 0)
     gaps.push("users-without-membership");
   if (summary.tablesWithEmptyCeiling.size > 0) gaps.push("empty-ceiling");
+  if (summary.tablesWithLimitedVisibility.size > 0)
+    gaps.push("limited-visibility");
   return gaps;
 }

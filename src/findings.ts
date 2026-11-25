@@ -1,3 +1,5 @@
+import type { Visibility } from "./access.js";
+
 /**
  * - `crossed` — rows from another tenant reached the caller. Certain, given
  *   the config and the database as they are when the check runs.
@@ -86,4 +88,12 @@ export type CheckSummary = {
    * means the read-only role cannot see the table's rows.
    */
   tablesWithEmptyCeiling: Set<string>;
+  /**
+   * Tables the read-only role may not see in full, by the catalog: RLS with
+   * no `using (true)` policy for the role, or a restrictive one. A partial
+   * membership table makes the caller's own tenants look foreign, so no read
+   * is `crossed` then; a partial data table lowers check 2's ceiling, so its
+   * check 2 findings are not `crossed` either.
+   */
+  tablesWithLimitedVisibility: Map<string, Visibility>;
 };

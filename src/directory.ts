@@ -1,4 +1,5 @@
 import pg from "pg";
+import { inspectAccess, type TableAccess } from "./access.js";
 import { type Config, tableConfig } from "./config.js";
 
 /**
@@ -21,6 +22,12 @@ export type TenantDirectory = {
    * Tenants with no rows map to 0.
    */
   rowCounts(table: string, tenants: string[]): Promise<Map<string, number>>;
+  /**
+   * What the role can see of each table the checks read, from the catalog.
+   * Optional so test directories can leave it out; then every table counts as
+   * fully visible.
+   */
+  inspectAccess?(): Promise<TableAccess[]>;
   close(): Promise<void>;
 };
 
@@ -198,6 +205,10 @@ export function createPgDirectory(
       });
       for (const row of rows) result.set(row.k, Number(row.n));
       return result;
+    },
+
+    inspectAccess() {
+      return inspectAccess(pool, config);
     },
 
     async close() {

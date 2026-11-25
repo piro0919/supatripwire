@@ -1,4 +1,10 @@
 export {
+  inspectAccess,
+  type TableAccess,
+  tablesToInspect,
+  type Visibility,
+} from "./access.js";
+export {
   evaluateNamedTenant,
   type FilterTarget,
   lookupTableFor,
@@ -16,6 +22,7 @@ export {
 export { rowsReturned, visibleAtLeast } from "./content-range.js";
 export { type CoverageGap, coverageGaps, exitCode } from "./coverage.js";
 export { createPgDirectory, type TenantDirectory } from "./directory.js";
+export { type DoctorOptions, type DoctorResult, runDoctor } from "./doctor.js";
 export type {
   CheckSummary,
   Finding,

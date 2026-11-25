@@ -3,6 +3,14 @@ import type { CheckSummary, Finding } from "./findings.js";
 
 const DAY_MS = 86_400_000;
 
+const VISIBILITY_NOTES = {
+  all: "every row",
+  none: "no rows — RLS is on and no SELECT policy applies to the role",
+  partial:
+    "maybe only some rows — no plain `using (true)` policy, or a restrictive one",
+  missing: "not found — wrong name, or no USAGE on its schema",
+} as const;
+
 const ORDER = { crossed: 0, unconfirmed: 1, attempt: 2 } as const;
 
 const HEADINGS = {
@@ -116,6 +124,25 @@ export function formatText(
     lines.push("  see the table's rows (RLS policy for the role).");
   }
 
+  if (summary.tablesWithLimitedVisibility.size > 0) {
+    lines.push("");
+    lines.push(
+      "Warning — the read-only role may not see every row of these tables (from the catalog):",
+    );
+    const tables = [...summary.tablesWithLimitedVisibility].sort((a, b) =>
+      a[0].localeCompare(b[0]),
+    );
+    for (const [table, visibility] of tables) {
+      lines.push(`  ${table}: ${VISIBILITY_NOTES[visibility]}`);
+    }
+    lines.push(
+      "  Findings that depend on them are not reported as crossed. Give the role a",
+    );
+    lines.push(
+      "  `for select to <role> using (true)` policy on each; `supatripwire doctor` checks it.",
+    );
+  }
+
   const gaps = coverageGaps(summary);
   if (gaps.length > 0) {
     lines.push("");
@@ -173,6 +200,9 @@ export function formatJson(
       unmappedTables: Object.fromEntries(summary.unmappedTables),
       usersWithoutMembership: [...summary.usersWithoutMembership].sort(),
       tablesWithEmptyCeiling: [...summary.tablesWithEmptyCeiling].sort(),
+      tablesWithLimitedVisibility: Object.fromEntries(
+        summary.tablesWithLimitedVisibility,
+      ),
       findings: summary.findings,
     },
     null,

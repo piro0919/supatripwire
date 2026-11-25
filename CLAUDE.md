@@ -63,6 +63,14 @@ An npm package whose main part is a **CLI that detects**, plus a small helper.
    findings; all are in the README. A ceiling of 0 is reported as `unconfirmed`, not
    `crossed`: it usually means the read-only role has no RLS policy on that table, and
    the report names the table.
+   Added 2026-11-25: a ceiling above 0 can still be too low when RLS shows the role only
+   some rows. Before reading logs, `check` reads `pg_class` / `pg_policy` as the role
+   (`access.ts`): RLS off, owner, BYPASSRLS, or a permissive `using (true)` SELECT/ALL
+   policy for the role (or PUBLIC, or a role it is a member of) with no narrowing
+   restrictive one counts as seeing every row. Anything else holds back check 2 on that
+   table, and a limited membership table holds back every finding. Tested on local
+   Postgres 17; that a column-granted role can read these catalogs on hosted Supabase
+   is not yet tested.
 
 ### The helper
 
@@ -188,7 +196,7 @@ Checked against real projects, not just docs.
 
 ```text
 src/
-├── cli.ts                 # `supatripwire check`; exit 0 / 1 (crossed) / 2 (error) / 3 (--strict, gaps)
+├── cli.ts                 # `check` (exit 0 / 1 crossed / 2 error / 3 --strict gaps) and `doctor`
 ├── index.ts               # library exports
 ├── fetch.ts               # `supatripwire/fetch`: tripwireFetch (traceparent, x-forwarded-for)
 ├── config.ts              # supatripwire.json parsing; table and column names must be plain
@@ -202,6 +210,8 @@ src/
 ├── run-checks.ts          # one pass over the logs, both checks per entry
 ├── findings.ts            # finding and summary types
 ├── coverage.ts            # coverage gaps and the exit status
+├── access.ts              # what the role can see of each table, from the catalog
+├── doctor.ts              # `supatripwire doctor`: role, tables, columns, RLS, logs API
 ├── check-named-tenant.ts  # check 1
 ├── check-row-ceiling.ts   # check 2
 └── report.ts              # text and JSON output

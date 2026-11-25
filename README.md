@@ -73,10 +73,19 @@ part of a range: if the first read is more than a day after the start, the repor
 so, but it is not a coverage gap, because a quiet project looks the same.
 
 The report ends with the coverage gaps it found: `no-reads`, `unmapped-tables`,
-`no-row-count`, `users-without-membership` and `empty-ceiling` (the last two are the
-warnings above, and only cover users and tables that show up in findings). With `--strict`, a run that found no crossed data but has a gap exits
-with status 3, so a scheduled job also fails when it could not look properly. Crossed
-data still exits with 1.
+`no-row-count`, `users-without-membership`, `empty-ceiling` (these two are the
+warnings above, and only cover users and tables that show up in findings) and
+`limited-visibility`. With `--strict`, a run that found no crossed data but has a gap
+exits with status 3, so a scheduled job also fails when it could not look properly.
+Crossed data still exits with 1.
+
+`limited-visibility` comes from Postgres's catalog, read before any log: a table the
+checks read where RLS may hide rows from the read-only role — no SELECT policy for
+it, or none that is plainly `using (true)`, or a restrictive policy on top. Check 2
+counts the caller's rows through that role, so a role that sees only some of them
+would turn honest reads into "data crossed". Findings that depend on such a table are
+held back to "not provably foreign"; if it is the membership table, that is every
+finding.
 
 ## Setup
 
@@ -103,6 +112,13 @@ Column-level `GRANT` is enough: supatripwire selects only the columns named in t
 config. Without the policies, every user looks like a member of no tenant. The report
 warns when users with no membership rows show up, and their reads are never reported
 as crossed. A data table without the policy looks empty; the report names such tables.
+
+Once the role and the config are in place, `npx supatripwire doctor` checks them: that
+it connects (and not as a superuser), that every table and column in the config
+exists and is readable, that RLS lets the role see every row, and that the logs API
+answers. It reads the catalog and at most one log line, never table rows. It cannot
+tell whether the config matches your app — which column really holds the tenant, or
+whether the membership table is complete — and says so.
 
 ### 2. A personal access token
 
@@ -160,6 +176,7 @@ Anything you put there is no longer watched: list only names that hold no tenant
 export SUPABASE_ACCESS_TOKEN=…
 export SUPATRIPWIRE_DATABASE_URL=postgres://supatripwire:…@…/postgres
 
+npx supatripwire doctor                # check the setup first
 npx supatripwire check                 # the last 24 hours
 npx supatripwire check --since 7d
 npx supatripwire check --from 2026-01-01T00:00:00Z --to 2026-01-02T00:00:00Z

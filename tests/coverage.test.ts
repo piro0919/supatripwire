@@ -251,6 +251,76 @@ describe("coverage", () => {
     expect(summary.findings).toEqual([]);
   });
 
+  it("holds back check 2 on a table the role may not fully see", async () => {
+    const partial: TenantDirectory = {
+      ...directory,
+      async inspectAccess() {
+        return [
+          {
+            table: "projects",
+            visibility: "partial",
+            missingColumns: [],
+            unreadableColumns: [],
+          },
+        ];
+      },
+    };
+    const summary = await runChecks(
+      [read({ contentRange: "0-9/*" })],
+      config,
+      partial,
+    );
+    expect(summary.findings.map((f) => f.kind)).toEqual(["unconfirmed"]);
+    expect(coverageGaps(summary)).toEqual(["limited-visibility"]);
+    expect(formatText(summary, range)).toContain(
+      "projects: maybe only some rows",
+    );
+  });
+
+  it("holds back both checks when the membership table is not fully visible", async () => {
+    const twoTables = parseConfig({
+      projectRef: "abcdefghijklmnopqrst",
+      membership: {
+        table: "memberships",
+        userColumn: "user_id",
+        tenantColumn: "org_id",
+      },
+      tables: { projects: { tenantColumn: "org_id" } },
+    });
+    const hiddenMembership: TenantDirectory = {
+      ...directory,
+      async inspectAccess() {
+        return [
+          {
+            table: "memberships",
+            visibility: "none",
+            missingColumns: [],
+            unreadableColumns: [],
+          },
+          {
+            table: "projects",
+            visibility: "all",
+            missingColumns: [],
+            unreadableColumns: [],
+          },
+        ];
+      },
+    };
+    const summary = await runChecks(
+      [
+        read({ search: "?org_id=eq.org-b", contentRange: "0-1/*" }),
+        read({ contentRange: "0-9/*" }),
+      ],
+      twoTables,
+      hiddenMembership,
+    );
+    expect(summary.findings.length).toBe(2);
+    expect(summary.findings.every((f) => f.kind === "unconfirmed")).toBe(true);
+    expect(Object.fromEntries(summary.tablesWithLimitedVisibility)).toEqual({
+      memberships: "none",
+    });
+  });
+
   it("exits 1 on crossed data even with gaps and strict", async () => {
     const summary = await runChecks(
       [read({ contentRange: "0-9/*" }), read({ table: "invoices" })],
