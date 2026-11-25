@@ -37,6 +37,8 @@ is reported as data crossed. The total after the slash is ignored, because with
 
 For a user with no membership rows at all, both checks hold back to "not provably
 foreign": that more often means the membership mapping or the role's access is wrong.
+Check 2 does the same when the table holds no rows in the caller's tenants, and the
+report names those tables.
 
 The command exits with status 1 when data crossed, 0 otherwise, and 2 on error, so a
 scheduled job can fail loudly.
@@ -65,7 +67,7 @@ create policy supatripwire_read on public.tasks for select to supatripwire using
 Column-level `GRANT` is enough: supatripwire selects only the columns named in the
 config. Without the policies, every user looks like a member of no tenant. The report
 warns when users with no membership rows show up, and their reads are never reported
-as crossed.
+as crossed. A data table without the policy looks empty; the report names such tables.
 
 ### 2. A personal access token
 
@@ -139,7 +141,8 @@ Pro, 28 on Team, 90 on Enterprise.
 - **RPC and views** — they need their own entry in `tables`.
 - **Schemas other than the default one.** The table is taken from the request path.
 - **Past memberships.** Membership is read as it is now. A user who has since left a
-  tenant shows up as reading a tenant they do not belong to.
+  tenant shows up as reading a tenant they do not belong to (check 1), and their
+  earlier reads can exceed the rows of the tenants they still have (check 2).
 - **Rows deleted since the read** (check 2). Row counts are taken when the check runs.
   If a tenant's rows were hard-deleted between the read and the check, an honest read
   can exceed the smaller count. Running the check soon after the reads keeps this rare.

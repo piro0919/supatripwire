@@ -56,8 +56,11 @@ An npm package whose main part is a **CLI that detects**, plus a small helper.
    → at least 110 visible), so paging with an offset is caught even when each page is
    small. The total after the slash is ignored: with `count=planned` or `estimated` it is
    a planner estimate, and the log does not say which was asked for. The ceiling is
-   counted when the check runs, so hard deletes between the read and the check, and rows
-   RLS lets every tenant see (null tenant), can cause findings; both are in the README.
+   counted when the check runs, so hard deletes between the read and the check, leaving
+   a tenant after the read, and rows RLS lets every tenant see (null tenant), can cause
+   findings; all are in the README. A ceiling of 0 is reported as `unconfirmed`, not
+   `crossed`: it usually means the read-only role has no RLS policy on that table, and
+   the report names the table.
 
 ### The helper
 

@@ -24,8 +24,10 @@ export function formatText(
   );
   for (const kind of ["crossed", "unconfirmed", "attempt"] as const) {
     const group = sorted.filter((f) => f.kind === kind);
+    // A read both checks flag is listed twice but counted once.
+    const reads = new Set(group.map((f) => f.logId)).size;
     lines.push("");
-    lines.push(`${HEADINGS[kind]}: ${group.length}`);
+    lines.push(`${HEADINGS[kind]}: ${reads}`);
     for (const f of group) lines.push(...formatFinding(f));
   }
 
@@ -50,6 +52,17 @@ export function formatText(
       "  membership.userColumn holds the auth user id, and that the read-only role",
     );
     lines.push("  can see the rows (RLS policy for the role).");
+  }
+
+  if (summary.tablesWithEmptyCeiling.size > 0) {
+    lines.push("");
+    lines.push(
+      `Warning — rows came back from tables that hold none in the caller's tenants: ${[...summary.tablesWithEmptyCeiling].sort().join(", ")}.`,
+    );
+    lines.push(
+      "  Those reads are not reported as crossed. Check that the read-only role can",
+    );
+    lines.push("  see the table's rows (RLS policy for the role).");
   }
   return `${lines.join("\n")}\n`;
 }
@@ -85,6 +98,7 @@ export function formatJson(
       readsOnUnmappedTables: summary.readsOnUnmappedTables,
       unmappedTables: Object.fromEntries(summary.unmappedTables),
       usersWithoutMembership: [...summary.usersWithoutMembership].sort(),
+      tablesWithEmptyCeiling: [...summary.tablesWithEmptyCeiling].sort(),
       findings: summary.findings,
     },
     null,

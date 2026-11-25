@@ -55,4 +55,10 @@ export type CheckSummary = {
    * in no tenant.
    */
   usersWithoutMembership: Set<string>;
+  /**
+   * Tables where a member got rows back while the table holds none in their
+   * tenants. Check 2 does not report those reads as `crossed`: it more often
+   * means the read-only role cannot see the table's rows.
+   */
+  tablesWithEmptyCeiling: Set<string>;
 };

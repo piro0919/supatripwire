@@ -29,6 +29,7 @@ export async function runChecks(
     readsOnUnmappedTables: 0,
     unmappedTables: new Map(),
     usersWithoutMembership: new Set(),
+    tablesWithEmptyCeiling: new Set(),
   };
 
   let batch: ReadLogEntry[] = [];
@@ -44,6 +45,8 @@ export async function runChecks(
         summary.findings.push(finding);
         if (finding.memberTenants.length === 0) {
           summary.usersWithoutMembership.add(finding.userId);
+        } else if (finding.check === "row-ceiling" && finding.ceiling === 0) {
+          summary.tablesWithEmptyCeiling.add(finding.table);
         }
       }
     }

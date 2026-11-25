@@ -14,8 +14,10 @@ import type { Lookups } from "./lookups.js";
  * filter said, and even with no filter at all.
  *
  * - `crossed` — the floor exceeds the ceiling.
- * - `unconfirmed` — rows came back to a user with no membership rows at all,
- *   which more often means the membership mapping is wrong.
+ * - `unconfirmed` — the ceiling is 0: either the user has no membership rows,
+ *   or the table holds no rows in their tenants. Both more often mean the
+ *   mapping is wrong or the read-only role cannot see the rows (RLS on, no
+ *   policy for the role) than that every returned row was foreign.
  */
 export function evaluateRowCeiling(
   entry: ReadLogEntry,
@@ -33,7 +35,7 @@ export function evaluateRowCeiling(
 
   return {
     check: "row-ceiling",
-    kind: mine.size > 0 ? "crossed" : "unconfirmed",
+    kind: ceiling > 0 ? "crossed" : "unconfirmed",
     timestamp: entry.timestamp,
     logId: entry.id,
     userId: entry.userId,

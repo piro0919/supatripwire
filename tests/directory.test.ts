@@ -130,6 +130,27 @@ describe.skipIf(!adminUrl)("createPgDirectory against Postgres", () => {
     expect(Object.fromEntries(tickets)).toEqual({ [ORG_A]: 0, [ORG_B]: 1 });
   });
 
+  it("keeps the other values typed when one does not parse", async () => {
+    // As text, `3F2A…` would not match the uuid column and count 0.
+    const counts = await directory.rowCounts("projects", [
+      ORG_A.toUpperCase(),
+      "",
+      ORG_B,
+    ]);
+    expect(Object.fromEntries(counts)).toEqual({
+      [ORG_A.toUpperCase()]: 1,
+      "": 0,
+      [ORG_B]: 1,
+    });
+    const rows = await directory.tenantsOfRows("projects", [
+      "not-a-uuid",
+      PROJECT_B.toUpperCase(),
+    ]);
+    expect(Object.fromEntries(rows)).toEqual({
+      [PROJECT_B.toUpperCase()]: ORG_B,
+    });
+  });
+
   it("maps integer ids", async () => {
     const result = await directory.tenantsOfRows("tickets", ["7", "8"]);
     expect(Object.fromEntries(result)).toEqual({ "7": ORG_B });

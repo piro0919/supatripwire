@@ -57,12 +57,40 @@ export function createPgDirectory(
   }
 
   /**
+   * Runs `query` comparing in the column's own type, which keeps its index
+   * usable. If some input does not parse as that type (someone filtered
+   * `id=eq.abc` on a uuid column), only the inputs that fail are compared as
+   * text. The rest stay typed, so one bad value cannot make the others miss:
+   * `3F2A…` matches a uuid column when typed, but not as text.
+   */
+  async function typedOrText<R extends pg.QueryResultRow>(
+    type: string | null,
+    values: string[],
+    query: (cast: string | null, batch: string[]) => Promise<R[]>,
+  ): Promise<R[]> {
+    if (!type) return query(null, values);
+    try {
+      return await query(type, values);
+    } catch (error) {
+      if (!isParseError(error)) throw error;
+    }
+    const rows: R[] = [];
+    const asText: string[] = [];
+    for (const value of values) {
+      try {
+        rows.push(...(await query(type, [value])));
+      } catch (error) {
+        if (!isParseError(error)) throw error;
+        asText.push(value);
+      }
+    }
+    if (asText.length > 0) rows.push(...(await query(null, asText)));
+    return rows;
+  }
+
+  /**
    * Looks up `valueColumn` for each input in `values`, matched on `column`.
    * Each row comes back keyed by the input string as the log spelled it.
-   *
-   * Comparing in the column's own type keeps its index usable. If an input
-   * does not parse as that type (someone filtered `id=eq.abc` on a uuid
-   * column), the batch falls back to comparing as text.
    */
   async function lookup(
     table: string,
@@ -74,26 +102,16 @@ export function createPgDirectory(
     const c = quoteIdent(column);
     const vc = quoteIdent(valueColumn);
     const type = await columnType(table, column);
-    if (type) {
-      try {
-        const r = await pool.query<{ k: string; v: string | null }>(
-          `select u.input as k, t.${vc}::text as v
-             from unnest($1::text[]) as u(input)
-             join ${t} as t on t.${c} = u.input::${type}`,
-          [values],
-        );
-        return r.rows;
-      } catch (error) {
-        if (!isParseError(error)) throw error;
-      }
-    }
-    const r = await pool.query<{ k: string; v: string | null }>(
-      `select u.input as k, t.${vc}::text as v
-         from unnest($1::text[]) as u(input)
-         join ${t} as t on t.${c}::text = u.input`,
-      [values],
-    );
-    return r.rows;
+    return typedOrText(type, values, async (cast, batch) => {
+      const on = cast ? `t.${c} = u.input::${cast}` : `t.${c}::text = u.input`;
+      const r = await pool.query<{ k: string; v: string | null }>(
+        `select u.input as k, t.${vc}::text as v
+           from unnest($1::text[]) as u(input)
+           join ${t} as t on ${on}`,
+        [batch],
+      );
+      return r.rows;
+    });
   }
 
   return {
@@ -162,26 +180,23 @@ export function createPgDirectory(
       if (!t || tenants.length === 0) return result;
       const tq = quoteIdent(table);
       const c = quoteIdent(t.tenantColumn);
-      // Grouped by the input spelling so the keys match the membership ids.
-      const count = async (cast: string) =>
-        pool.query<{ k: string; n: number }>(
-          `select u.input as k, count(*)::int as n
-             from unnest($1::text[]) as u(input)
-             join ${tq} as r on ${cast}
-            group by u.input`,
-          [tenants],
-        );
       const type = await columnType(table, t.tenantColumn);
-      let rows: Array<{ k: string; n: number }> | null = null;
-      if (type) {
-        try {
-          rows = (await count(`r.${c} = u.input::${type}`)).rows;
-        } catch (error) {
-          if (!isParseError(error)) throw error;
-        }
-      }
-      rows ??= (await count(`r.${c}::text = u.input`)).rows;
-      for (const row of rows) result.set(row.k, row.n);
+      // Grouped by the input spelling so the keys match the membership ids.
+      // bigint comes back from pg as a string.
+      const rows = await typedOrText(type, tenants, async (cast, batch) => {
+        const on = cast
+          ? `r.${c} = u.input::${cast}`
+          : `r.${c}::text = u.input`;
+        const r = await pool.query<{ k: string; n: string }>(
+          `select u.input as k, count(*) as n
+             from unnest($1::text[]) as u(input)
+             join ${tq} as r on ${on}
+            group by u.input`,
+          [batch],
+        );
+        return r.rows;
+      });
+      for (const row of rows) result.set(row.k, Number(row.n));
       return result;
     },
 

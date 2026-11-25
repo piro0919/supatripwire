@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseConfig } from "../src/config.js";
 import type { TenantDirectory } from "../src/directory.js";
 import type { ReadLogEntry } from "../src/logs.js";
+import { formatText } from "../src/report.js";
 import { runChecks } from "../src/run-checks.js";
 
 // A made-up project: org-a has 2 projects, org-b has 5.
@@ -15,6 +16,7 @@ const config = parseConfig({
   tables: {
     orgs: { tenantColumn: "id" },
     projects: { tenantColumn: "org_id" },
+    tasks: { tenantColumn: "org_id" },
   },
 });
 
@@ -173,5 +175,22 @@ describe("check 2: more rows than the caller's tenants hold", () => {
       ["named-tenant", "crossed"],
       ["row-ceiling", "crossed"],
     ]);
+    const text = formatText(summary, {
+      from: new Date("2026-01-01T00:00:00Z"),
+      to: new Date("2026-01-02T00:00:00Z"),
+    });
+    expect(text).toContain("Data crossed tenants: 1\n");
+  });
+
+  it("holds back to unconfirmed when the table holds no rows in the caller's tenants", async () => {
+    // Most often the read-only role has no RLS policy on the table.
+    const { summary, findings } = await run([
+      read({ table: "tasks", contentRange: "0-4/*" }),
+    ]);
+    expect(findings).toMatchObject([
+      { kind: "unconfirmed", ceiling: 0, memberTenants: ["org-a"] },
+    ]);
+    expect([...summary.tablesWithEmptyCeiling]).toEqual(["tasks"]);
+    expect([...summary.usersWithoutMembership]).toEqual([]);
   });
 });
