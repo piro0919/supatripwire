@@ -19,6 +19,10 @@ type FindingBase = {
   rows: number | null;
   /** Tenants the user belongs to, as the database says now. */
   memberTenants: string[];
+  /**
+   * `request.search`. From `runChecks`, values are hidden (`***`) except on
+   * the table's tenant, id and reference columns; see `redactSearch`.
+   */
   search: string;
 };
 

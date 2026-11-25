@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Findings show the request's query with filter values hidden, except on the table's
+  tenant, id and reference columns, so names or emails an app filtered on do not end
+  up in CI logs.
+
 - `supatripwire/fetch`: `tripwireFetch` wraps the `fetch` passed to `createServerClient`
   and adds `x-forwarded-for` (the end user's IP) and `traceparent` (from the active
   OpenTelemetry span), so a log line can be traced back to a user and a page request.

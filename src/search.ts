@@ -77,7 +77,7 @@ function unquote(value: string): string {
 }
 
 /** `(a,b(c,d),"e,f")` → `["a", "b(c,d)", "\"e,f\""]`; null if not parenthesised. */
-function groupItems(raw: string): string[] | null {
+export function groupItems(raw: string): string[] | null {
   if (!raw.startsWith("(") || !raw.endsWith(")")) return null;
   const inner = raw.slice(1, -1);
   const items: string[] = [];

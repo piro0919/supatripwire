@@ -186,6 +186,7 @@ src/
 ├── config.ts              # supatripwire.json parsing; names must be plain identifiers
 ├── logs.ts                # Management API log reader: 24h windows, paged by cursor
 ├── search.ts              # eq / in filters out of request.search, incl. and=() / or=()
+├── redact.ts              # hides filter values in findings, except mapped id/tenant columns
 ├── content-range.ts       # rows returned; fewest rows visible (last + 1)
 ├── directory.ts           # read-only role lookups (memberships, row → tenant, counts)
 ├── lookups.ts             # per-run cache; prefetches what a batch of entries needs

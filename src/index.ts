@@ -27,6 +27,7 @@ export {
   type ReadLogEntry,
 } from "./logs.js";
 export { Lookups } from "./lookups.js";
+export { REDACTED, redactSearch } from "./redact.js";
 export { formatJson, formatText } from "./report.js";
 export { runChecks } from "./run-checks.js";
 export { type PinningFilter, parsePinningFilters } from "./search.js";
