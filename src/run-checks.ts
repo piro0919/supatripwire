@@ -5,7 +5,6 @@ import type { TenantDirectory } from "./directory.js";
 import type { CheckSummary } from "./findings.js";
 import type { ReadLogEntry } from "./logs.js";
 import { Lookups } from "./lookups.js";
-import { redactSearch } from "./redact.js";
 
 const DEFAULT_BATCH_SIZE = 500;
 
@@ -40,12 +39,9 @@ export async function runChecks(
     for (const entry of batch) {
       for (const finding of [
         evaluateNamedTenant(entry, config, lookups),
-        evaluateRowCeiling(entry, lookups),
+        evaluateRowCeiling(entry, config, lookups),
       ]) {
         if (!finding) continue;
-        // Findings end up in CI logs and chat; values on unmapped columns
-        // may be names or emails, so they leave here hidden.
-        finding.search = redactSearch(entry.search, config.tables[entry.table]);
         summary.findings.push(finding);
         if (finding.memberTenants.length === 0) {
           summary.usersWithoutMembership.add(finding.userId);

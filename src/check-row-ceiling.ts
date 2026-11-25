@@ -1,7 +1,9 @@
+import type { Config } from "./config.js";
 import { rowsReturned, visibleAtLeast } from "./content-range.js";
 import type { RowCeilingFinding } from "./findings.js";
 import type { ReadLogEntry } from "./logs.js";
 import type { Lookups } from "./lookups.js";
+import { redactSearch } from "./redact.js";
 
 /**
  * Check 2: the caller's query saw more rows than the table holds inside the
@@ -21,6 +23,7 @@ import type { Lookups } from "./lookups.js";
  */
 export function evaluateRowCeiling(
   entry: ReadLogEntry,
+  config: Config,
   lookups: Lookups,
 ): RowCeilingFinding | null {
   const visible = visibleAtLeast(entry.contentRange);
@@ -45,6 +48,6 @@ export function evaluateRowCeiling(
     visibleAtLeast: visible,
     ceiling,
     memberTenants: [...mine].sort(),
-    search: entry.search,
+    search: redactSearch(entry.search, config.tables[entry.table]),
   };
 }

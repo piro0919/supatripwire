@@ -41,11 +41,11 @@ foreign": that more often means the membership mapping or the role's access is w
 Check 2 does the same when the table holds no rows in the caller's tenants, and the
 report names those tables.
 
-Each finding shows the request's query with filter values hidden (`***`), except on
-the table's `tenantColumn`, `idColumn` and `references` — the ids you need to follow it
-up. A filter on any other column may hold a name or an email, and the report often
-ends up in CI logs: `?org_id=eq.…&name=ilike.***`. Use the log id to see the full
-request in the Supabase dashboard.
+Each finding shows the request's query with filter values hidden (`***`), except the
+ids matched with `eq`, `neq`, `in` or `is` on the table's `tenantColumn`, `idColumn`
+and `references` — what you need to follow it up. Any other value may be a name or an
+email, and the report often ends up in CI logs: `?org_id=eq.…&name=ilike.***`. Use the
+log id to see the full request in the Supabase dashboard.
 
 The command exits with status 1 when data crossed, 0 otherwise, and 2 on error, so a
 scheduled job can fail loudly.

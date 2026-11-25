@@ -44,7 +44,6 @@ const OPERATORS = new Set([
   "nxr",
   "nxl",
   "adj",
-  "not",
 ]);
 
 /**
@@ -91,21 +90,54 @@ function redactParam(key: string, raw: string, keep: Set<string>): string {
     const embedded = segments.slice(0, -1).some((s) => s !== "not");
     return redactTree(raw, embedded ? new Set() : keep);
   }
-  // `other.col=eq.…` filters an embedded resource; its columns are not mapped.
-  return keep.has(key) ? raw : redactFilter(raw);
+  // `other.col=eq.…` filters an embedded resource; its columns are not mapped,
+  // and a dotted key is never in `keep`.
+  return redactFilter(raw, keep.has(key));
 }
 
-/** `ilike.*smith*` → `ilike.***`; `not.in.(a,b)` → `not.in.***`. */
-function redactFilter(raw: string): string {
+/**
+ * `ilike.*smith*` → `ilike.***`; `not.in.(a,b)` → `not.in.***`.
+ *
+ * With `mapped`, the value stays when the operator names ids (`eq`, `neq`,
+ * `in`, `is`): those are what a finding is about. Pattern and full-text
+ * operators can carry free text even on an id column, so they are hidden.
+ */
+function redactFilter(raw: string, mapped: boolean): string {
+  const ops = operatorPrefix(raw);
+  if (ops === null) return REDACTED;
+  if (mapped && ID_OPERATORS.has(ops.name)) return raw;
+  return `${ops.prefix}.${REDACTED}`;
+}
+
+/** Operators whose value is an id or a constant, kept on mapped columns. */
+const ID_OPERATORS = new Set(["eq", "neq", "in", "is"]);
+
+/** Full-text operators, which take a language config in parentheses. */
+const FTS_OPERATORS = new Set(["fts", "plfts", "phfts", "wfts"]);
+
+/**
+ * The operator in front of a filter value: an optional `not`, then exactly one
+ * operator, with `(any)` / `(all)` or, on full-text operators, a language
+ * config. Null when the value does not start that way, or nothing follows.
+ */
+function operatorPrefix(raw: string): { prefix: string; name: string } | null {
   const tokens = raw.split(".");
-  const kept: string[] = [];
-  for (const token of tokens) {
-    // `like(any)`, `fts(english)`: the modifier in parentheses is not data.
-    const name = token.replace(/\([a-z_]*\)$/, "");
-    if (!OPERATORS.has(name) || kept.length === tokens.length - 1) break;
-    kept.push(token);
+  const at = tokens[0] === "not" ? 1 : 0;
+  if (tokens.length < at + 2) return null;
+  const match = /^([a-z]+)(?:\(([a-z_]+)\))?$/.exec(tokens[at] as string);
+  if (!match) return null;
+  const name = match[1] as string;
+  const modifier = match[2];
+  if (!OPERATORS.has(name)) return null;
+  if (
+    modifier !== undefined &&
+    modifier !== "any" &&
+    modifier !== "all" &&
+    !FTS_OPERATORS.has(name)
+  ) {
+    return null;
   }
-  return [...kept, REDACTED].join(".");
+  return { prefix: tokens.slice(0, at + 1).join("."), name };
 }
 
 /** `(org_id.eq.<id>,name.eq.Smith)` → `(org_id.eq.<id>,name.eq.***)`. */
@@ -121,11 +153,16 @@ function redactTreeItem(item: string, keep: Set<string>): string {
   const dot = item.indexOf(".");
   if (dot <= 0) return REDACTED;
   const column = item.slice(0, dot);
-  const rest = item.slice(dot + 1);
-  return `${column}.${keep.has(column) ? rest : redactFilter(rest)}`;
+  // `project_id.name.eq.x` is a filter on a resource embedded through the
+  // `project_id` column, not on `project_id`: its rest starts with no operator,
+  // so redactFilter hides it whole.
+  return `${column}.${redactFilter(item.slice(dot + 1), keep.has(column))}`;
 }
 
-/** Like the log: percent-encoded, but `(`, `)`, `*` and `,` left readable. */
+/**
+ * Percent-encoded, but `(`, `)`, `*` and `,` left readable. The log encodes
+ * those too (`in.%28a%2Cb%29`), so search the log by its id, not this text.
+ */
 function encode(value: string): string {
   return encodeURIComponent(value).replace(/%2C/g, ",");
 }

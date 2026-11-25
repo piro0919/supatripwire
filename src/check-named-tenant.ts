@@ -3,6 +3,7 @@ import { rowsReturned } from "./content-range.js";
 import type { FindingKind, NamedTenantFinding } from "./findings.js";
 import type { ReadLogEntry } from "./logs.js";
 import type { Lookups } from "./lookups.js";
+import { redactSearch } from "./redact.js";
 import { parsePinningFilters } from "./search.js";
 
 const HTTP_OK_MIN = 200;
@@ -97,6 +98,6 @@ export function evaluateNamedTenant(
     rows,
     foreignTenants: [...foreign].sort(),
     memberTenants: [...mine].sort(),
-    search: entry.search,
+    search: redactSearch(entry.search, config.tables[entry.table]),
   };
 }

@@ -20,8 +20,9 @@ type FindingBase = {
   /** Tenants the user belongs to, as the database says now. */
   memberTenants: string[];
   /**
-   * `request.search`. From `runChecks`, values are hidden (`***`) except on
-   * the table's tenant, id and reference columns; see `redactSearch`.
+   * `request.search` with values hidden (`***`) except ids on the table's
+   * tenant, id and reference columns; see `redactSearch`. Findings end up in
+   * CI logs, and other columns may hold names or emails.
    */
   search: string;
 };

@@ -83,14 +83,41 @@ describe("redactSearch", () => {
     );
   });
 
+  it("hides free text on a mapped column when the operator is not an id match", () => {
+    expect(
+      redactSearch(
+        "?id=ilike.%2Ajohn.doe%40example.com%2A&org_id=fts.secret&id=not.in.%28t-1%29",
+        tasks,
+      ),
+    ).toBe("?id=ilike.***&org_id=fts.***&id=not.in.(t-1)");
+  });
+
+  it("reads only one operator, so operator-like words in a value stay hidden", () => {
+    expect(
+      redactSearch(
+        "?note=eq.is.not.like(bob).home&name=eq.in.secret&x=like(bob).y",
+        tasks,
+      ),
+    ).toBe("?note=eq.***&name=eq.***&x=***");
+  });
+
+  it("hides a tree filter on a resource embedded through a mapped column", () => {
+    expect(
+      redactSearch(
+        "?or=%28project_id.name.ilike.%2Aacme%2A%2Corg_id.eq.org-b%29",
+        tasks,
+      ),
+    ).toBe("?or=(project_id.***,org_id.eq.org-b)");
+  });
+
   it("returns an empty search as is", () => {
     expect(redactSearch("", tasks)).toBe("");
     expect(redactSearch("?", tasks)).toBe("?");
   });
 });
 
-describe("runChecks redacts the search in findings", () => {
-  it("hides values on unmapped columns in what it reports", async () => {
+describe("both checks redact the search in findings", () => {
+  it("hides values on unmapped columns in what they report", async () => {
     const config = parseConfig({
       projectRef: "abcdefghijklmnopqrst",
       membership: {
