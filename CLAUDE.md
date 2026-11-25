@@ -256,9 +256,9 @@ lp/                        # landing page, supatripwire.kkweb.io (not published 
   `@opentelemetry/api` (the helper only). Biome, tsup, vitest,
   lefthook — same setup as the other piro0919 packages.
 - secretlint runs on staged files before each commit and on the whole tree in CI. The
-  repository is private on GitHub, and the API reports no secret scanning or push
-  protection settings for it (`security_and_analysis: null`, 2026-11-25), so this is the
-  only check. Its recommended preset catches `postgres://` URLs with
+  repository went public on 2026-11-26; GitHub secret scanning and push protection were
+  turned on then (before that, private, they were unavailable and secretlint was the
+  only check). Its recommended preset catches `postgres://` URLs with
   a password but not Supabase keys, so `.secretlintrc.json` adds patterns for
   `sbp_…` (personal access token) and `sb_secret_…` (secret API key). Legacy
   `service_role` keys are JWTs that cannot be told apart from the public anon key, so
