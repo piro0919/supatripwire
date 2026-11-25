@@ -5,7 +5,8 @@ API gateway logs and a few id-to-tenant mappings from the database, and reports 
 named a tenant the caller does not belong to — or returned more rows than the caller could
 possibly see. Nothing sits in the request path and no row contents are read.
 
-Status: agreed in a sounding-board session on 2026-11-25. No code yet.
+Status: agreed in a sounding-board session on 2026-11-25. Package skeleton and check 1
+implemented; check 2 and the helper not yet. Not published.
 
 ## Why this exists
 
@@ -37,6 +38,16 @@ An npm package whose main part is a **CLI that detects**, plus a small helper.
    via the read-only role and compare with the caller's memberships. If it names a tenant
    outside them and `response.headers.content_range` shows one or more rows, data crossed
    — certain. Zero rows means RLS stopped an attempt; report it as an attempt.
+   Refined while implementing: "certain" holds only when **one filter names nothing but
+   other tenants**. Filters on different columns are ANDed and an `in` list is ORed, so
+   `id=in.(own,foreign)` returning rows proves nothing — correct RLS returns the own row.
+   That case, and rows returned with no readable `content_range`, is reported as
+   `unconfirmed`, not `crossed`. So is any read by a user with **no membership rows**:
+   that almost always means the membership mapping is wrong or the read-only role cannot
+   see the rows (RLS on, no policy for the role), and the report warns about it.
+   Pinning filters are read at the top level, inside `and=(…)`, and from an `or=(…)` whose
+   branches all pin one column. Tenant-column values are canonicalized through the
+   membership column's type before comparing (`3F2A…` → `3f2a…`).
 2. **More rows than the caller can see.** Filters only ever narrow. So with correct RLS the
    rows returned can never exceed the rows of that table inside the caller's tenants. If
    they do, data crossed — certain, whatever the filter said. This also catches requests
@@ -78,6 +89,19 @@ Checked against real projects, not just docs.
   ([docs](https://supabase.com/docs/guides/integrations/build-a-supabase-oauth-integration/oauth-scopes)).
   So a third-party OAuth app reading logs is not documented — hence a personal access
   token, and hence a read-only DB role rather than SQL over the Management API.
+  Update 2026-11-25: the Management API's OpenAPI spec (`api.supabase.com/api/v1-json`)
+  marks `GET`/`POST /v1/projects/{ref}/analytics/endpoints/logs` with
+  `x-oauth-scope: analytics:read`. The scopes guide above still lacks that row. Not yet
+  decided whether this changes the PAT choice.
+- Logs are queried with ClickHouse SQL on a single `logs` table, `source = 'edge_logs'`,
+  fields in `log_attributes['…']` (all strings). `logs.all` is gone (410). `select *`
+  and `count(*)` are rejected; no maximum row count is documented, so the CLI pages
+  1000 rows at a time with a `(timestamp, toString(id))` cursor. A tuple comparison
+  `(timestamp, id) > (…)` fails on the logs backend; the expanded `or` form works.
+- `request.search` is logged with its leading `?` and URL-encoded (`in.%28a%2Cb%29`).
+  Embedded-resource filters appear as `other.col=eq.…`.
+- `response.headers.content_range` on a 200 GET is `N-M/*` for rows, `*/*` for none,
+  and `N-M/T` or `*/T` when a count was asked for.
 
 ## What it cannot see — say so in the README
 
@@ -110,6 +134,40 @@ Checked against real projects, not just docs.
 - Write "Supabase" as one word with a capital S. Do not use Supabase's logo
   ([brand guidelines](https://supabase.com/brand)).
 - Everything in this repository is in English.
+
+## Code
+
+```text
+src/
+├── cli.ts                 # `supatripwire check`; exit 0 / 1 (crossed) / 2 (error)
+├── index.ts               # library exports
+├── config.ts              # supatripwire.json parsing; names must be plain identifiers
+├── logs.ts                # Management API log reader: 24h windows, paged by cursor
+├── search.ts              # top-level eq / in filters out of request.search
+├── content-range.ts       # rows returned, or null when unknown
+├── directory.ts           # read-only role lookups (memberships, row → tenant)
+├── check-named-tenant.ts  # check 1
+└── report.ts              # text and JSON output
+tests/                     # vitest; directory.test.ts needs SUPATRIPWIRE_TEST_DATABASE_URL
+```
+
+- TypeScript, ESM only, Node >= 20. Runtime dependency: `pg`. Biome, tsup, vitest,
+  lefthook — same setup as the other piro0919 packages.
+- `directory.ts` compares ids in the column's own type (`u.input::<type>`) so the
+  primary-key index is used, keys results by the string the log spelled, and falls back
+  to text comparison when a value does not parse. Only the id and tenant columns are
+  ever selected, which is what lets the customer's role be column-granted.
+- Locally, `tests/directory.test.ts` runs against any throwaway Postgres
+  (`initdb` + `pg_ctl` in a temp dir is enough); CI uses a `postgres:17` service.
+- When changing the check, break it deliberately and confirm the tests fail.
+
+```bash
+pnpm test        # vitest
+pnpm typecheck   # tsc --noEmit
+pnpm lint        # biome check
+pnpm build:lib   # tsup -> dist
+pnpm check:package
+```
 
 ## Open questions
 
