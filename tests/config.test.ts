@@ -67,6 +67,25 @@ describe("parseConfig", () => {
     );
   });
 
+  it("reads rowCeiling, keeping only false", () => {
+    const config = parseConfig({
+      ...valid,
+      tables: {
+        ...valid.tables,
+        off: { tenantColumn: "org_id", rowCeiling: false },
+        on: { tenantColumn: "org_id", rowCeiling: true },
+      },
+    });
+    expect(tableConfig(config, "off")?.rowCeiling).toBe(false);
+    expect(tableConfig(config, "on")).toEqual({ tenantColumn: "org_id" });
+    expect(() =>
+      parseConfig({
+        ...valid,
+        tables: { ...valid.tables, bad: { tenantColumn: "x", rowCeiling: 0 } },
+      }),
+    ).toThrow(/rowCeiling must be true or false/);
+  });
+
   it("reads tenantVia, and treats its column as a reference", () => {
     const config = parseConfig({
       ...valid,

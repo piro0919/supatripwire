@@ -64,7 +64,9 @@ An npm package whose main part is a **CLI that detects**, plus a small helper.
    a planner estimate, and the log does not say which was asked for. The ceiling is
    counted when the check runs, so hard deletes between the read and the check, leaving
    a tenant after the read, and rows RLS lets every tenant see (null tenant), can cause
-   findings; all are in the README. A ceiling of 0 is reported as `unconfirmed`, not
+   findings; all are in the README. `"rowCeiling": false` on a table turns check 2 off
+   for it (added 2026-11-26, for null-tenant rows every tenant may read); check 1 still
+   runs, and no counts are queried for it. A ceiling of 0 is reported as `unconfirmed`, not
    `crossed`: it usually means the read-only role has no RLS policy on that table, and
    the report names the table.
    Added 2026-11-25: a ceiling above 0 can still be too low when RLS shows the role only

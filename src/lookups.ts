@@ -1,5 +1,5 @@
 import { lookupTableFor } from "./check-named-tenant.js";
-import type { Config } from "./config.js";
+import { type Config, tableConfig } from "./config.js";
 import { visibleAtLeast } from "./content-range.js";
 import type { TenantDirectory } from "./directory.js";
 import type { ReadLogEntry } from "./logs.js";
@@ -68,7 +68,10 @@ export class Lookups {
           }
         }
       }
-      if ((visibleAtLeast(entry.contentRange) ?? 0) > 0) {
+      if (
+        tableConfig(this.config, entry.table)?.rowCeiling !== false &&
+        (visibleAtLeast(entry.contentRange) ?? 0) > 0
+      ) {
         needsMembership = true;
         counted.push(entry);
       }

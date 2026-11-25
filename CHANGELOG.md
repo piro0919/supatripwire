@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Config: `"rowCeiling": false` on a table turns check 2 off for it, for tables whose
+  RLS lets every tenant read some rows (a null tenant), which check 2 reported as
+  crossed. Check 1 still runs on the table.
 - `examples/github-actions.yml`: a workflow that runs `check --strict` every hour over
   the last 3 hours, through the shared pooler (GitHub's runners have no IPv6).
 - Config: `tenantVia` maps a table with no tenant column of its own to the tenant of

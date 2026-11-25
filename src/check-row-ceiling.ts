@@ -26,6 +26,7 @@ export function evaluateRowCeiling(
   config: Config,
   lookups: Lookups,
 ): RowCeilingFinding | null {
+  if (tableConfig(config, entry.table)?.rowCeiling === false) return null;
   const visible = visibleAtLeast(entry.contentRange);
   if (visible === null || visible === 0) return null;
 

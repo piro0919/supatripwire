@@ -17,6 +17,12 @@ export type TableConfig = {
   idColumn?: string;
   /** Columns holding the id of a row in another configured table, e.g. `{ "resident_id": "residents" }`. */
   references?: Record<string, string>;
+  /**
+   * `false` turns check 2 off for this table — for a table whose RLS lets
+   * every tenant read some rows (a null tenant), which the ceiling never
+   * counts. Check 1 still runs. Absent means on.
+   */
+  rowCeiling?: boolean;
 } & (
   | {
       /** Column holding the tenant id. On the tenants table itself, this is its primary key. */
@@ -175,6 +181,14 @@ export function parseConfig(json: unknown): Config {
     }
     if (t.idColumn !== undefined)
       table.idColumn = identifier(t.idColumn, `tables.${name}.idColumn`);
+    if (t.rowCeiling !== undefined) {
+      if (typeof t.rowCeiling !== "boolean") {
+        throw new ConfigError(
+          `tables.${name}.rowCeiling must be true or false`,
+        );
+      }
+      if (t.rowCeiling === false) table.rowCeiling = false;
+    }
     if (t.references !== undefined) {
       const refs = object(t.references, `tables.${name}.references`);
       table.references = Object.create(null) as Record<string, string>;

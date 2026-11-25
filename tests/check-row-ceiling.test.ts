@@ -17,6 +17,8 @@ const config = parseConfig({
     orgs: { tenantColumn: "id" },
     projects: { tenantColumn: "org_id" },
     tasks: { tenantColumn: "org_id" },
+    // Shared templates with a null tenant: check 2 off.
+    templates: { tenantColumn: "org_id", rowCeiling: false },
   },
 });
 
@@ -192,5 +194,22 @@ describe("check 2: more rows than the caller's tenants hold", () => {
     ]);
     expect([...summary.tablesWithEmptyCeiling]).toEqual(["tasks"]);
     expect([...summary.usersWithoutMembership]).toEqual([]);
+  });
+
+  it("is off on a table with rowCeiling: false, while check 1 still runs", async () => {
+    const { summary, findings, countCalls } = await run([
+      read({ table: "templates", contentRange: "0-49/*" }),
+      read({
+        table: "templates",
+        search: "?org_id=eq.org-b",
+        contentRange: "0-0/*",
+      }),
+    ]);
+    expect(findings).toEqual([]);
+    expect(countCalls).toEqual([]);
+    expect(summary.findings.map((f) => [f.check, f.kind])).toEqual([
+      ["named-tenant", "crossed"],
+    ]);
+    expect([...summary.tablesWithEmptyCeiling]).toEqual([]);
   });
 });

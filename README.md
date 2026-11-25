@@ -175,6 +175,10 @@ infer your authorization rules.
 - `idColumn` — the primary key, if it is not `id`.
 - `references` — columns holding the id of a row in another listed table. A filter on
   such a column is resolved through that table.
+- `rowCeiling` — optional. `false` turns check 2 off for the table, for one whose RLS
+  lets every tenant read some rows (see
+  [What it cannot see](#what-it-cannot-see)). Check 1 still runs on it. A `tenantVia`
+  table counts through its own rows, so set it there too if it has the same shared rows.
 
 - `ignore` — optional. Names in the request path you deliberately leave unchecked:
   tables every tenant may read, or `rpc` for every function under `/rest/v1/rpc/`.
@@ -297,8 +301,8 @@ Supabase dashboard to see these two fields.
   can exceed the smaller count. Running the check soon after the reads keeps this rare.
 - **Rows every tenant may see** (check 2). If your RLS lets everyone read some rows of a
   table — shared templates with a null tenant, say — those rows are not in the ceiling,
-  and reads that include them are reported. There is no per-table switch for check 2
-  yet; leaving the table out of the config turns off check 1 for it as well.
+  and reads that include them are reported. Set `"rowCeiling": false` on such a table
+  to turn check 2 off for it; check 1 still runs.
 - **Small leaks under check 2.** One foreign row mixed into a result that stays under
   the ceiling is not detectable.
 - **Breaches at a third party** the data was sent to. Monitoring your own project
