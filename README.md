@@ -59,17 +59,21 @@ leaked. The report says how many that was:
   the range, and when the first and last were found. This is the whole denominator:
   writes, anonymous reads, secret-key requests and anything else on the list below
   are outside it.
-- **Fully checked** — reads on configured tables with a row count.
+- **Fully checked** — reads on configured tables with a row count, or that failed
+  (4xx/5xx) and so returned nothing.
 - **On tables missing from the config** — not checked at all.
-- **Without a row count** — successful reads whose `content_range` was missing or
-  unreadable. Check 2 cannot judge them, and check 1 cannot call them crossed.
+- **Without a row count** — reads that did not fail but whose `content_range` was
+  missing or unreadable. Check 2 cannot judge them, and check 1 cannot call them
+  crossed.
 
 When no reads are found, the range may be older than your logs: the logs API returns
-an empty result rather than an error once logs are no longer kept.
+an empty result rather than an error once logs are no longer kept. The same goes for
+part of a range: if the first read is more than a day after the start, the report says
+so, but it is not a coverage gap, because a quiet project looks the same.
 
 The report ends with the coverage gaps it found: `no-reads`, `unmapped-tables`,
 `no-row-count`, `users-without-membership` and `empty-ceiling` (the last two are the
-warnings above). With `--strict`, a run that found no crossed data but has a gap exits
+warnings above, and only cover users and tables that show up in findings). With `--strict`, a run that found no crossed data but has a gap exits
 with status 3, so a scheduled job also fails when it could not look properly. Crossed
 data still exits with 1.
 

@@ -8,8 +8,8 @@ import type { ReadLogEntry } from "./logs.js";
 import { Lookups } from "./lookups.js";
 
 const DEFAULT_BATCH_SIZE = 500;
-const HTTP_OK_MIN = 200;
-const HTTP_OK_MAX = 299;
+const HTTP_ERROR_MIN = 400;
+const HTTP_ERROR_MAX = 599;
 
 /**
  * Runs both checks over the log entries in one pass.
@@ -62,18 +62,21 @@ export async function runChecks(
 
   for await (const entry of entries) {
     summary.readsScanned++;
-    // Entries come oldest first.
-    summary.firstReadAt ??= entry.timestamp;
-    summary.lastReadAt = entry.timestamp;
+    // Fixed-width timestamps compare as strings; callers need not sort.
+    if (summary.firstReadAt === null || entry.timestamp < summary.firstReadAt)
+      summary.firstReadAt = entry.timestamp;
+    if (summary.lastReadAt === null || entry.timestamp > summary.lastReadAt)
+      summary.lastReadAt = entry.timestamp;
     if (!config.tables[entry.table]) {
       summary.readsOnUnmappedTables++;
       increment(summary.unmappedTables, entry.table);
       continue;
     }
-    // An error response returned no rows, so it has nothing to judge.
-    const succeeded =
-      entry.status >= HTTP_OK_MIN && entry.status <= HTTP_OK_MAX;
-    if (succeeded && rowsReturned(entry.contentRange) === null) {
+    // An error response returned no rows, so it has nothing to judge. A
+    // missing status is not an error: it may have returned rows.
+    const failed =
+      entry.status >= HTTP_ERROR_MIN && entry.status <= HTTP_ERROR_MAX;
+    if (!failed && rowsReturned(entry.contentRange) === null) {
       summary.readsWithoutRowCount++;
       increment(summary.tablesWithoutRowCount, entry.table);
     }

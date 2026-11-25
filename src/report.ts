@@ -1,6 +1,8 @@
 import { coverageGaps } from "./coverage.js";
 import type { CheckSummary, Finding } from "./findings.js";
 
+const DAY_MS = 86_400_000;
+
 const ORDER = { crossed: 0, unconfirmed: 1, attempt: 2 } as const;
 
 const HEADINGS = {
@@ -22,6 +24,13 @@ export function formatText(
     lines.push(
       `  found from ${summary.firstReadAt} to ${summary.lastReadAt} (UTC)`,
     );
+    const firstAt = Date.parse(`${summary.firstReadAt}Z`);
+    if (firstAt - range.from.getTime() > DAY_MS) {
+      lines.push(
+        "  Nothing before that. Either nothing was read, or those logs are no longer",
+      );
+      lines.push("  kept. This is not a coverage gap, even with --strict.");
+    }
   } else {
     lines.push(
       "  None found. Either nothing was read, or the logs for this range are no",
@@ -106,8 +115,9 @@ export function formatText(
   const gaps = coverageGaps(summary);
   if (gaps.length > 0) {
     lines.push("");
+    lines.push(`Coverage gaps: ${gaps.join(", ")}.`);
     lines.push(
-      `Coverage gaps: ${gaps.join(", ")}. With --strict, these exit with status 3.`,
+      "  With --strict, a run with gaps and no crossed data exits with status 3.",
     );
   }
   return `${lines.join("\n")}\n`;

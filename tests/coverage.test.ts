@@ -74,6 +74,28 @@ describe("coverage", () => {
     expect(summary.lastReadAt).toBe(last.timestamp);
   });
 
+  it("finds the first and last reads whatever order the entries come in", async () => {
+    const early = read({});
+    const late = read({});
+    const summary = await runChecks([late, early], config, directory);
+    expect(summary.firstReadAt).toBe(early.timestamp);
+    expect(summary.lastReadAt).toBe(late.timestamp);
+  });
+
+  it("notes a range whose first read comes more than a day after its start", async () => {
+    const summary = await runChecks(
+      [read({ timestamp: "2026-01-05T00:00:00.000000" })],
+      config,
+      directory,
+    );
+    const to = new Date("2026-01-06T00:00:00Z");
+    const wide = { from: new Date("2026-01-01T00:00:00Z"), to };
+    const narrow = { from: new Date("2026-01-04T12:00:00Z"), to };
+    expect(formatText(summary, wide)).toContain("Nothing before that.");
+    expect(formatText(summary, narrow)).not.toContain("Nothing before that.");
+    expect(coverageGaps(summary)).toEqual([]);
+  });
+
   it("calls an empty range a gap, since expired logs also come back empty", async () => {
     const summary = await runChecks([], config, directory);
     expect(coverageGaps(summary)).toEqual(["no-reads"]);
@@ -90,19 +112,21 @@ describe("coverage", () => {
         read({ contentRange: "garbage" }),
         // An error returned no rows: nothing to judge, so not a gap.
         read({ contentRange: "", status: 401 }),
+        // A missing status is not an error; it may have returned rows.
+        read({ contentRange: "", status: Number("") }),
         read({}),
       ],
       config,
       directory,
     );
-    expect(summary.readsWithoutRowCount).toBe(2);
+    expect(summary.readsWithoutRowCount).toBe(3);
     expect(Object.fromEntries(summary.tablesWithoutRowCount)).toEqual({
-      projects: 2,
+      projects: 3,
     });
     expect(coverageGaps(summary)).toEqual(["no-row-count"]);
     const text = formatText(summary, range);
     expect(text).toContain("fully checked: 2");
-    expect(text).toContain("without a row count: 2");
+    expect(text).toContain("without a row count: 3");
   });
 
   it("lists every kind of gap, and strict fails on them", async () => {

@@ -57,8 +57,9 @@ export type CheckSummary = {
   firstReadAt: string | null;
   lastReadAt: string | null;
   /**
-   * Successful reads on configured tables whose `content_range` was missing or
-   * unreadable. Check 2 cannot judge them and check 1 cannot call them
+   * Reads on configured tables that did not fail (4xx/5xx) and whose
+   * `content_range` was missing or unreadable — a missing status counts as
+   * not failed. Check 2 cannot judge them and check 1 cannot call them
    * crossed: they were scanned, not checked.
    */
   readsWithoutRowCount: number;
