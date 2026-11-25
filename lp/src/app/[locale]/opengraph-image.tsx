@@ -17,11 +17,18 @@ export function generateStaticParams(): { locale: string }[] {
 
 /* The card shows real output, the same report the page's terminals print: the command,
    how many reads were scanned, and how many crossed tenants. */
-const SCANNED = CHECK_REPORT[1] ?? "";
-const CROSSED = CHECK_REPORT.find((line) => line.startsWith("Data crossed tenants")) ?? "";
+function reportLine(prefix: string): string {
+  const line = CHECK_REPORT.find((candidate) => candidate.startsWith(prefix));
+  if (line === undefined) {
+    throw new Error(`No "${prefix}" line in CHECK_REPORT; update the Open Graph card.`);
+  }
+  return line;
+}
+const SCANNED = reportLine("Signed-in reads scanned");
+const CROSSED = reportLine("Data crossed tenants");
 
 /* Pieces the line may wrap between. The renderer would otherwise break Japanese anywhere,
-   leaving 「を検知」 alone on a line. Hiragana and spaces join the piece before them, which
+   leaving the last particle and verb alone on a line. Hiragana and spaces join the piece before them, which
    keeps particles and okurigana with their word. */
 function wrapPieces(text: string, locale: string): string[] {
   const pieces: string[] = [];
